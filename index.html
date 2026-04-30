@@ -60,6 +60,7 @@
       if (!snap.exists()) return { valid: false, reason: 'INVALID_KEY' };
 
       const data = snap.data();
+      if (data._deleted) return { valid: false, reason: 'INVALID_KEY' };
       if (!data.isActive) return { valid: false, reason: 'REVOKED', data };
 
       const now    = new Date();
