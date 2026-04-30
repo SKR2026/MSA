@@ -33,6 +33,23 @@
   // Sign in anonymously so Firestore rules (request.auth != null) pass
   try { await signInAnonymously(auth); } catch(e) { console.warn('Auth failed:', e.message); }
 
+  // ── ROBUST DATE PARSER — handles all Firestore Timestamp formats ──
+  function parseFirestoreDate(val) {
+    if (!val) return null;
+    // Native Firestore Timestamp with .toDate() method
+    if (typeof val.toDate === 'function') return val.toDate();
+    // Plain object from SDK: { seconds: N, nanoseconds: N }
+    if (typeof val === 'object' && typeof val.seconds === 'number') return new Date(val.seconds * 1000);
+    // ISO string or date string
+    if (typeof val === 'string') {
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    // Milliseconds number
+    if (typeof val === 'number') return new Date(val);
+    return null;
+  }
+
   // ── LICENSE VALIDATION ──────────────────────────────────
   async function validateLicense(key) {
     if (!key || key.trim() === '') return { valid: false, reason: 'NO_KEY' };
@@ -46,8 +63,10 @@
       if (!data.isActive) return { valid: false, reason: 'REVOKED', data };
 
       const now    = new Date();
-      const expiry = data.expiryDate?.toDate ? data.expiryDate.toDate() : new Date(data.expiryDate);
-      const expired = now > expiry;
+      const expiry = parseFirestoreDate(data.expiryDate);
+
+      // If expiry date cannot be parsed, treat as valid (don't block on bad data)
+      const expired = expiry ? (now > expiry) : false;
 
       // Update last validated timestamp silently
       try {
@@ -61,7 +80,7 @@
         valid:    true,
         readOnly: expired,
         reason:   expired ? 'EXPIRED' : 'OK',
-        data:     { ...data, expiryDate: expiry }
+        data:     { ...data, expiryDate: expiry || data.expiryDate }
       };
     } catch(e) {
       if (e.code === 'unavailable' || e.message?.includes('offline')) {
@@ -790,11 +809,15 @@ async function activateLicense(){
   try{
     const result=await window.__msaValidate(key);
     if(result.valid){
+      const expDate = result.data.expiryDate instanceof Date
+        ? result.data.expiryDate
+        : (result.data.expiryDate?.seconds ? new Date(result.data.expiryDate.seconds*1000) : new Date(result.data.expiryDate));
       currentLicense={key,...result.data};
       // Store in localStorage (persists across sessions)
       localStorage.setItem(SESSION_KEY,JSON.stringify({
         key,company:result.data.company,customerName:result.data.customerName,
-        expiryDate:result.data.expiryDate instanceof Date ? result.data.expiryDate.toISOString() : new Date(result.data.expiryDate).toISOString(),readOnly:result.readOnly,
+        expiryDate: expDate instanceof Date && !isNaN(expDate) ? expDate.toISOString() : null,
+        readOnly:result.readOnly,
         ts:Date.now()
       }));
       unlockApp(result.readOnly,result.data);
@@ -836,11 +859,12 @@ function unlockApp(readOnly,data){
 
 function parseDate(val){
   if(!val) return null;
-  if(val instanceof Date) return isNaN(val)?null:val;
-  if(val && typeof val.toDate === 'function') return val.toDate();
-  if(val && val.seconds) return new Date(val.seconds * 1000);
+  if(val instanceof Date) return isNaN(val.getTime())?null:val;
+  if(typeof val.toDate === 'function') { const d=val.toDate(); return isNaN(d.getTime())?null:d; }
+  if(typeof val === 'object' && typeof val.seconds === 'number') return new Date(val.seconds * 1000);
+  if(typeof val === 'number') return new Date(val);
   const d = new Date(val);
-  return isNaN(d) ? null : d;
+  return isNaN(d.getTime()) ? null : d;
 }
 
 function applyReadOnlyMode(data){
