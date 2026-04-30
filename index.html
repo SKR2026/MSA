@@ -791,10 +791,10 @@ async function activateLicense(){
     const result=await window.__msaValidate(key);
     if(result.valid){
       currentLicense={key,...result.data};
-      // Store in sessionStorage (expires when tab closes)
-      sessionStorage.setItem(SESSION_KEY,JSON.stringify({
+      // Store in localStorage (persists across sessions)
+      localStorage.setItem(SESSION_KEY,JSON.stringify({
         key,company:result.data.company,customerName:result.data.customerName,
-        expiryDate:result.data.expiryDate?.toString(),readOnly:result.readOnly,
+        expiryDate:result.data.expiryDate instanceof Date ? result.data.expiryDate.toISOString() : new Date(result.data.expiryDate).toISOString(),readOnly:result.readOnly,
         ts:Date.now()
       }));
       unlockApp(result.readOnly,result.data);
@@ -828,18 +828,27 @@ function unlockApp(readOnly,data){
   } else {
     document.getElementById('license-chip').classList.add('visible');
     document.getElementById('chip-company').textContent=data.company||data.customerName||'Licensed';
-    const exp=data.expiryDate instanceof Date?data.expiryDate:new Date(data.expiryDate);
-    const daysLeft=Math.ceil((exp-new Date())/(1000*60*60*24));
-    document.getElementById('chip-expiry').textContent=`Expires ${exp.toLocaleDateString('en-IN')} (${daysLeft}d)`;
+    const exp=parseDate(data.expiryDate);
+    const daysLeft=exp?Math.ceil((exp-new Date())/(1000*60*60*24)):null;
+    document.getElementById('chip-expiry').textContent=exp?`Expires ${exp.toLocaleDateString('en-IN')} (${daysLeft}d)`:'—';
   }
+}
+
+function parseDate(val){
+  if(!val) return null;
+  if(val instanceof Date) return isNaN(val)?null:val;
+  if(val && typeof val.toDate === 'function') return val.toDate();
+  if(val && val.seconds) return new Date(val.seconds * 1000);
+  const d = new Date(val);
+  return isNaN(d) ? null : d;
 }
 
 function applyReadOnlyMode(data){
   isReadOnly=true;
   const banner=document.getElementById('readonly-banner');
   banner.classList.add('visible');
-  const exp=data.expiryDate instanceof Date?data.expiryDate:new Date(data.expiryDate);
-  document.getElementById('ro-expiry-date').textContent=exp.toLocaleDateString('en-IN');
+  const exp=parseDate(data.expiryDate);
+  document.getElementById('ro-expiry-date').textContent=exp?exp.toLocaleDateString('en-IN'):'Unknown';
   // Disable all action buttons
   ['btn-analyse','btn-demo','btn-run-grr','btn-run-bias','btn-run-stab','btn-run-attr'].forEach(id=>{
     const el=document.getElementById(id);if(el){el.disabled=true;el.title='License expired — read-only mode';}
@@ -848,14 +857,14 @@ function applyReadOnlyMode(data){
 }
 
 function logoutLicense(){
-  sessionStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem(SESSION_KEY);
   location.reload();
 }
 
 function showLicenseInfo(){
   if(!currentLicense){return;}
-  const exp=currentLicense.expiryDate instanceof Date?currentLicense.expiryDate:new Date(currentLicense.expiryDate);
-  const iss=currentLicense.issuedDate?.toDate?currentLicense.issuedDate.toDate():currentLicense.issuedDate?new Date(currentLicense.issuedDate):null;
+  const exp=parseDate(currentLicense.expiryDate);
+  const iss=parseDate(currentLicense.issuedDate);
   document.getElementById('license-modal-body').innerHTML=`
     <div><strong style="color:var(--a1)">License Key:</strong> ${currentLicense.key}</div>
     <div><strong style="color:var(--a1)">Company:</strong> ${currentLicense.company||'—'}</div>
@@ -874,7 +883,7 @@ function showLicenseInfo(){
 document.addEventListener('DOMContentLoaded',()=>{
   // Wait for Firebase to be ready, then check session
   const checkSession=()=>{
-    const sess=sessionStorage.getItem(SESSION_KEY);
+    const sess=localStorage.getItem(SESSION_KEY);
     if(sess){
       try{
         const s=JSON.parse(sess);
@@ -884,7 +893,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         } else {
           document.addEventListener('firebase-ready',()=>revalidateSession(s.key),{once:true});
         }
-      } catch(e){sessionStorage.removeItem(SESSION_KEY);}
+      } catch(e){localStorage.removeItem(SESSION_KEY);}
     }
   };
   checkSession();
@@ -899,7 +908,7 @@ async function revalidateSession(key){
       currentLicense={key,...result.data};
       unlockApp(result.readOnly,result.data);
     } else {
-      sessionStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem(SESSION_KEY);
       // Gate remains visible
     }
   } catch(e){ /* gate remains */ }
