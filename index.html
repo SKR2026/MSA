@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MSA Suite — Measurement System Analysis</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<!-- ═══════════════════════════════════════════
+     FIREBASE CONFIG — FILL YOUR DETAILS BELOW
+     Get from: Firebase Console → Project Settings → Your Apps → SDK setup
+═══════════════════════════════════════════ -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, doc, getDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  // ▼▼▼ REPLACE WITH YOUR FIREBASE CONFIG ▼▼▼
+  const firebaseConfig = {
+    apiKey:            "YOUR_API_KEY",
+    authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
+    projectId:         "YOUR_PROJECT_ID",
+    storageBucket:     "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId:             "YOUR_APP_ID"
+  };
+  // ▲▲▲ REPLACE WITH YOUR FIREBASE CONFIG ▲▲▲
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  // ── LICENSE VALIDATION ──────────────────────────────────
+  async function validateLicense(key) {
+    if (!key || key.trim() === '') return { valid: false, reason: 'NO_KEY' };
+    const cleanKey = key.trim().toUpperCase();
+    try {
+      const ref  = doc(db, 'licenses', cleanKey);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) return { valid: false, reason: 'INVALID_KEY' };
+
+      const data = snap.data();
+      if (!data.isActive) return { valid: false, reason: 'REVOKED', data };
+
+      const now    = new Date();
+      const expiry = data.expiryDate?.toDate ? data.expiryDate.toDate() : new Date(data.expiryDate);
+      const expired = now > expiry;
+
+      // Update last validated timestamp silently
+      try {
+        await updateDoc(ref, {
+          lastValidated:   serverTimestamp(),
+          activationCount: (data.activationCount || 0) + 1
+        });
+      } catch(e) { /* non-critical */ }
+
+      return {
+        valid:    true,
+        readOnly: expired,
+        reason:   expired ? 'EXPIRED' : 'OK',
+        data:     { ...data, expiryDate: expiry }
+      };
+    } catch(e) {
+      if (e.code === 'unavailable' || e.message?.includes('offline')) {
+        return { valid: false, reason: 'OFFLINE' };
+      }
+      return { valid: false, reason: 'ERROR', message: e.message };
+    }
+  }
+
+  // Expose to global scope
+  window.__msaValidate = validateLicense;
+  window.__msaFirebaseReady = true;
+  document.dispatchEvent(new Event('firebase-ready'));
+</script>
+
+<style>
+/* ═══════════════════ THEMES ═══════════════════ */
+:root {
+  --bg:#0f1117;--surf:#171c26;--surf2:#1e2535;--surf3:#252d40;
+  --border:#2d3650;--border2:#3d4f70;
+  --text:#e8edf8;--text2:#8898c0;--text3:#5a6a90;
+  --a1:#4f9cf9;--a2:#34d399;--a3:#f59e0b;--a4:#f472b6;--a5:#a78bfa;
+  --red:#ef4444;--yellow:#eab308;--green:#22c55e;
+  --topbg:rgba(15,17,23,0.96);--hdr-h:54px;--sidebar-w:280px;
+}
+[data-theme="coral"]{--bg:#1a0f0a;--surf:#261510;--surf2:#331a14;--surf3:#40201a;--border:#5a2a20;--border2:#7a3830;--text:#fdeee8;--text2:#d08878;--text3:#a06858;--a1:#ff6b35;--a2:#ffd23f;--a3:#06ffa5;--a4:#ff4d9e;--a5:#c084fc;--red:#ff3333;--yellow:#ffcc00;--green:#00e676;--topbg:rgba(26,15,10,0.96)}
+[data-theme="arctic"]{--bg:#f0f4ff;--surf:#ffffff;--surf2:#e8eeff;--surf3:#dde5ff;--border:#c0ccee;--border2:#9aaedd;--text:#1a2040;--text2:#4a5880;--text3:#8090b8;--a1:#2563eb;--a2:#059669;--a3:#d97706;--a4:#db2777;--a5:#7c3aed;--red:#dc2626;--yellow:#ca8a04;--green:#16a34a;--topbg:rgba(240,244,255,0.97)}
+[data-theme="forest"]{--bg:#061a0e;--surf:#0a2614;--surf2:#0e301a;--surf3:#123c20;--border:#1a5a2a;--border2:#2a7a40;--text:#d0ffe0;--text2:#70c890;--text3:#408060;--a1:#00ff88;--a2:#ffdd00;--a3:#00ccff;--a4:#ff5566;--a5:#dd88ff;--red:#ff5566;--yellow:#ffcc00;--green:#00ff88;--topbg:rgba(6,26,14,0.96)}
+[data-theme="dusk"]{--bg:#160d20;--surf:#1f1230;--surf2:#2a1840;--surf3:#361e52;--border:#4a2870;--border2:#6038a0;--text:#eedeff;--text2:#aa88dd;--text3:#7a58aa;--a1:#c084fc;--a2:#34d399;--a3:#fbbf24;--a4:#fb7185;--a5:#38bdf8;--red:#fb7185;--yellow:#fbbf24;--green:#34d399;--topbg:rgba(22,13,32,0.97)}
+[data-theme="steel"]{--bg:#0a0e12;--surf:#111620;--surf2:#181e2c;--surf3:#1e2638;--border:#28344c;--border2:#384a68;--text:#d8e4f8;--text2:#6888aa;--text3:#445570;--a1:#60a5fa;--a2:#4ade80;--a3:#fb923c;--a4:#e879f9;--a5:#2dd4bf;--red:#f87171;--yellow:#facc15;--green:#4ade80;--topbg:rgba(10,14,18,0.97)}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:13px;line-height:1.5;overflow:hidden}
+
+/* ── LICENSE GATE ── */
+#license-gate {
+  position:fixed;inset:0;z-index:9999;
+  background:radial-gradient(ellipse at 30% 20%, #1a2a4a 0%, #0a0e18 60%);
+  display:flex;align-items:center;justify-content:center;
+  flex-direction:column;gap:0;
+}
+.gate-card {
+  background:rgba(23,28,38,0.95);
+  border:1px solid rgba(79,156,249,0.25);
+  border-radius:20px;
+  padding:48px 52px;
+  width:460px;
+  max-width:96vw;
+  box-shadow:0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(79,156,249,0.1);
+  position:relative;
+  overflow:hidden;
+}
+.gate-card::before{
+  content:'';position:absolute;top:-60px;right:-60px;
+  width:200px;height:200px;
+  background:radial-gradient(circle,rgba(79,156,249,0.15) 0%,transparent 70%);
+  border-radius:50%;
+}
+.gate-logo{
+  display:flex;align-items:center;gap:12px;margin-bottom:36px;
+}
+.gate-logo-badge{
+  width:48px;height:48px;border-radius:12px;
+  background:linear-gradient(135deg,#4f9cf9,#a78bfa);
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;font-weight:800;color:#fff;letter-spacing:-1px;
+}
+.gate-logo-text h1{font-size:20px;font-weight:700;color:#e8edf8;line-height:1}
+.gate-logo-text p{font-size:10px;color:#5a6a90;letter-spacing:2px;text-transform:uppercase;margin-top:3px}
+.gate-title{font-size:15px;font-weight:600;color:#8898c0;margin-bottom:6px}
+.gate-sub{font-size:12px;color:#5a6a90;margin-bottom:28px;line-height:1.6}
+.gate-input-wrap{position:relative;margin-bottom:14px}
+.gate-input{
+  width:100%;padding:14px 48px 14px 16px;
+  background:rgba(30,37,53,0.8);border:1.5px solid #2d3650;
+  color:#e8edf8;border-radius:10px;
+  font-family:'JetBrains Mono',monospace;font-size:15px;
+  letter-spacing:2px;text-transform:uppercase;
+  transition:border-color .2s,box-shadow .2s;
+}
+.gate-input:focus{outline:none;border-color:#4f9cf9;box-shadow:0 0 0 3px rgba(79,156,249,0.15)}
+.gate-input::placeholder{color:#2d3650;font-size:13px;letter-spacing:1px;text-transform:none}
+.gate-input-icon{position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:16px;color:#3d4f70}
+.gate-btn{
+  width:100%;padding:14px;border:none;border-radius:10px;
+  background:linear-gradient(135deg,#4f9cf9,#7c3aed);
+  color:#fff;font-family:'Outfit',sans-serif;font-size:14px;font-weight:700;
+  cursor:pointer;transition:all .2s;letter-spacing:.5px;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.gate-btn:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(79,156,249,0.35)}
+.gate-btn:active{transform:none}
+.gate-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.gate-error{
+  margin-top:12px;padding:10px 14px;border-radius:8px;
+  background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);
+  color:#fca5a5;font-size:12px;display:none;align-items:center;gap:8px;
+}
+.gate-error.show{display:flex}
+.gate-spinner{
+  width:18px;height:18px;border:2px solid rgba(255,255,255,0.3);
+  border-top-color:#fff;border-radius:50%;
+  animation:spin .7s linear infinite;display:none;
+}
+.gate-btn.loading .gate-spinner{display:block}
+.gate-btn.loading .btn-label{display:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+.gate-footer{margin-top:24px;text-align:center;font-size:10px;color:#3d4f70;line-height:1.8}
+.gate-footer strong{color:#5a6a90}
+.gate-format-hint{font-size:11px;color:#3d4f70;margin-bottom:20px;display:flex;align-items:center;gap:6px}
+.gate-format-hint code{background:rgba(79,156,249,.1);color:#4f9cf9;padding:2px 7px;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1px}
+
+/* ── READ-ONLY BANNER ── */
+#readonly-banner {
+  display:none;position:fixed;top:0;left:0;right:0;z-index:500;
+  background:linear-gradient(90deg,#92400e,#b45309);
+  color:#fef3c7;padding:8px 20px;font-size:12px;font-weight:600;
+  display:flex;align-items:center;justify-content:space-between;
+}
+#readonly-banner.visible{display:flex}
+.ro-actions{display:flex;gap:10px;align-items:center}
+.ro-btn{padding:4px 14px;border-radius:5px;border:1px solid rgba(254,243,199,.3);background:rgba(254,243,199,.1);color:#fef3c7;font-size:11px;cursor:pointer;font-family:'Outfit',sans-serif;transition:all .15s}
+.ro-btn:hover{background:rgba(254,243,199,.2)}
+
+/* ── LICENSE INFO CHIP ── */
+#license-chip {
+  display:none;align-items:center;gap:6px;
+  background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.25);
+  border-radius:20px;padding:4px 12px;font-size:11px;color:#34d399;
+  cursor:default;
+}
+#license-chip.visible{display:flex}
+#license-chip .chip-dot{width:6px;height:6px;border-radius:50%;background:#34d399;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── TOPBAR ── */
+.topbar{
+  position:sticky;top:0;z-index:200;height:var(--hdr-h);
+  background:var(--topbg);backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;gap:12px;
+}
+.brand{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.brand-pill{background:linear-gradient(135deg,var(--a1),var(--a5));color:#fff;font-weight:800;font-size:11px;letter-spacing:2px;padding:4px 10px;border-radius:20px}
+.brand-name{font-size:17px;font-weight:700;background:linear-gradient(90deg,var(--a1),var(--a2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.brand-sub{font-size:10px;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase}
+.top-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border-radius:7px;border:1px solid var(--border2);background:var(--surf2);color:var(--text);font-family:'Outfit',sans-serif;font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;white-space:nowrap}
+.btn:hover{background:var(--surf3);border-color:var(--text3)}
+.btn-accent{background:var(--a1);color:#fff;border-color:var(--a1);font-weight:600}
+.btn-accent:hover{opacity:.88}
+.btn-green{background:var(--a2);color:#000;border-color:var(--a2);font-weight:600}
+.btn-green:hover{opacity:.88}
+.btn-red{background:transparent;color:var(--red);border-color:var(--red)}
+.btn-red:hover{background:rgba(239,68,68,.1)}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn-xs{padding:3px 8px;font-size:10px}
+.btn:disabled,.btn[data-ro="true"]{opacity:.35;cursor:not-allowed;pointer-events:none}
+
+/* Theme switcher */
+.theme-wrap{position:relative}
+.theme-btn{cursor:pointer;border:1px solid var(--border2);background:var(--surf2);border-radius:7px;padding:5px 10px;display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)}
+.theme-btn:hover{background:var(--surf3)}
+.t-dots{display:flex;gap:3px}
+.t-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.theme-panel{position:absolute;top:calc(100% + 8px);right:0;background:var(--surf);border:1px solid var(--border2);border-radius:12px;padding:14px;z-index:300;box-shadow:0 12px 40px rgba(0,0,0,.5);width:260px;display:none}
+.theme-panel.open{display:block}
+.theme-panel-title{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin-bottom:10px}
+.theme-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.swatch{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 4px;border-radius:8px;border:2px solid transparent;background:var(--surf2);cursor:pointer;transition:all .15s}
+.swatch:hover{border-color:var(--border2)}
+.swatch.active{border-color:var(--a1)}
+.swatch-name{font-size:9px;color:var(--text3);text-align:center}
+
+/* ── LAYOUT ── */
+.layout{display:grid;grid-template-columns:var(--sidebar-w) 1fr;height:calc(100vh - var(--hdr-h));overflow:hidden}
+.sidebar{background:var(--surf);border-right:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column}
+.main{overflow-y:auto;background:var(--bg);display:flex;flex-direction:column}
+
+/* ── SIDEBAR ── */
+.sb-sec{border-bottom:1px solid var(--border);padding:14px}
+.sb-title{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.sb-title::before{content:'';width:3px;height:11px;background:var(--a1);border-radius:2px;flex-shrink:0}
+.fg{margin-bottom:8px}
+.fl{display:block;font-size:10px;color:var(--text2);margin-bottom:3px;font-weight:500}
+.fi{width:100%;background:var(--surf3);border:1px solid var(--border);color:var(--text);padding:5px 9px;border-radius:5px;font-family:'Outfit',sans-serif;font-size:12px;transition:border-color .15s}
+.fi:focus{outline:none;border-color:var(--a1)}
+.fi::placeholder{color:var(--text3)}
+.fi-row{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+select.fi option{background:var(--surf2)}
+
+/* AIAG thresholds */
+.threshold-indicator{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;margin-bottom:4px;font-size:11px}
+.th-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.th-excellent{background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.3);color:var(--green)}
+.th-acceptable{background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);color:var(--yellow)}
+.th-poor{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:var(--red)}
+
+/* ── TABS ── */
+.module-tabs{display:flex;background:var(--surf);border-bottom:1px solid var(--border);padding:0 20px;overflow-x:auto;flex-shrink:0}
+.module-tab{padding:13px 16px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text2);font-family:'Outfit',sans-serif;font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;white-space:nowrap;display:flex;align-items:center;gap:5px}
+.module-tab:hover{color:var(--text)}
+.module-tab.active{color:var(--a1);border-bottom-color:var(--a1)}
+.module-panel{display:none;flex:1;overflow-y:auto}
+.module-panel.active{display:flex;flex-direction:column}
+.sub-tabs{display:flex;background:var(--surf2);border-bottom:1px solid var(--border);padding:0 16px;flex-shrink:0}
+.sub-tab{padding:9px 14px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text3);font-family:'Outfit',sans-serif;font-size:11px;font-weight:500;cursor:pointer;transition:all .15s;white-space:nowrap}
+.sub-tab:hover{color:var(--text2)}
+.sub-tab.active{color:var(--a2);border-bottom-color:var(--a2)}
+.sub-panel{display:none;padding:16px}
+.sub-panel.active{display:block}
+
+/* ── CARDS / KPIs ── */
+.card{background:var(--surf);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px}
+.card-title{font-size:13px;font-weight:700;margin-bottom:12px}
+.kpi-grid{display:grid;gap:10px;margin-bottom:14px}
+.kpi-grid-4{grid-template-columns:repeat(4,1fr)}
+.kpi-grid-3{grid-template-columns:repeat(3,1fr)}
+.kpi-grid-5{grid-template-columns:repeat(5,1fr)}
+.kpi{background:var(--surf);border:1px solid var(--border);border-radius:8px;padding:12px 14px;position:relative;overflow:hidden}
+.kpi::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;border-radius:3px 0 0 3px}
+.kpi-l{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px}
+.kpi-v{font-family:'JetBrains Mono',monospace;font-size:19px;font-weight:600;line-height:1}
+.kpi-s{font-size:10px;color:var(--text3);margin-top:3px}
+.kpi-a1::before{background:var(--a1)}.kpi-v-a1{color:var(--a1)}
+.kpi-a2::before{background:var(--a2)}.kpi-v-a2{color:var(--a2)}
+.kpi-a3::before{background:var(--a3)}.kpi-v-a3{color:var(--a3)}
+.kpi-a4::before{background:var(--a4)}.kpi-v-a4{color:var(--a4)}
+.kpi-a5::before{background:var(--a5)}.kpi-v-a5{color:var(--a5)}
+.kpi-red::before{background:var(--red)}.kpi-v-red{color:var(--red)}
+.kpi-green::before{background:var(--green)}.kpi-v-green{color:var(--green)}
+.gauge{height:5px;background:var(--surf3);border-radius:3px;overflow:hidden;margin-top:5px}
+.gauge-fill{height:100%;border-radius:3px;transition:width .6s ease}
+
+/* ── TABLES ── */
+.tbl-wrap{overflow-x:auto}
+table.t{width:100%;border-collapse:collapse;font-family:'JetBrains Mono',monospace;font-size:11px}
+table.t th{background:var(--surf2);color:var(--text2);padding:7px 10px;text-align:center;border:1px solid var(--border);font-size:10px;font-family:'Outfit',sans-serif;font-weight:600;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap}
+table.t td{padding:5px 10px;text-align:center;border:1px solid var(--border);color:var(--text2)}
+table.t tr:hover td{background:var(--surf2)}
+.td-ok{color:var(--green)!important;font-weight:600}
+.td-warn{color:var(--yellow)!important;font-weight:600}
+.td-bad{color:var(--red)!important;font-weight:600}
+.td-hl{color:var(--a1)!important}
+.td-num{color:var(--text)!important}
+
+/* ── DATA INPUT ── */
+.data-input-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.upload-zone{border:2px dashed var(--border2);border-radius:8px;padding:20px;text-align:center;cursor:pointer;transition:all .15s;background:var(--surf2)}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--a1);background:rgba(79,156,249,.05)}
+.upload-zone p{font-size:11px;color:var(--text2);margin-top:4px}
+.upload-zone strong{color:var(--a1)}
+input[type=file]{display:none}
+textarea.dt{width:100%;background:var(--surf2);border:1px solid var(--border);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:10px;padding:10px;border-radius:7px;resize:vertical;min-height:180px;line-height:1.7}
+textarea.dt:focus{outline:none;border-color:var(--a1)}
+
+/* ── CHARTS ── */
+.chart-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.chart-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px}
+.chart-wrap{background:var(--surf);border:1px solid var(--border);border-radius:10px;padding:14px}
+.chart-wrap-full{background:var(--surf);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px}
+.cw-title{font-size:12px;font-weight:700;margin-bottom:10px;color:var(--text)}
+.cw-sub{font-size:10px;color:var(--text3);margin-top:-6px;margin-bottom:8px}
+canvas{max-width:100%}
+
+/* ── MISC ── */
+.result-badge{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600}
+.rb-pass{background:rgba(52,211,153,.15);color:var(--green);border:1px solid rgba(52,211,153,.3)}
+.rb-warn{background:rgba(234,179,8,.12);color:var(--yellow);border:1px solid rgba(234,179,8,.3)}
+.rb-fail{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+.vc-bar{display:flex;height:28px;border-radius:6px;overflow:hidden;margin:10px 0}
+.vc-seg{height:100%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff}
+.vc-legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
+.vc-item{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2)}
+.vc-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+.sec-div{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin:16px 0 8px;display:flex;align-items:center;gap:8px}
+.sec-div::after{content:'';flex:1;height:1px;background:var(--border)}
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:50px 20px;text-align:center;color:var(--text3)}
+.empty-icon{font-size:44px;margin-bottom:14px;opacity:.5}
+.empty-title{font-size:17px;font-weight:700;color:var(--text2);margin-bottom:8px}
+.notif{position:fixed;bottom:20px;right:20px;background:var(--surf2);border:1px solid var(--border2);border-radius:9px;padding:11px 16px;font-size:12px;z-index:9999;transition:all .3s;max-width:300px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.notif.ok{border-left:3px solid var(--green)}
+.notif.err{border-left:3px solid var(--red)}
+.notif.info{border-left:3px solid var(--a1)}
+.notif.hide{opacity:0;transform:translateY(8px);pointer-events:none}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--surf)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+@media print{
+  #license-gate,#readonly-banner,.topbar,.sidebar,.module-tabs,.sub-tabs,.btn,.upload-zone,#tab-grr-data{display:none!important}
+  .layout{display:block}.main{overflow:visible;height:auto}
+  .module-panel,.sub-panel{display:block!important}
+  body{background:white;color:black}
+  .card,.chart-wrap,.kpi{background:white;border:1px solid #ccc;break-inside:avoid}
+  @page{size:A3 landscape;margin:10mm}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ LICENSE GATE ═══════════════════ -->
+<div id="license-gate">
+  <div class="gate-card">
+    <div class="gate-logo">
+      <div class="gate-logo-badge">MSA</div>
+      <div class="gate-logo-text">
+        <h1>MSA Suite</h1>
+        <p>Measurement System Analysis</p>
+      </div>
+    </div>
+    <div class="gate-title">Enter your License Key to continue</div>
+    <div class="gate-sub">Your license key was provided by your software administrator. Contact support if you don't have one.</div>
+    <div class="gate-format-hint">Format: <code>MSA-XXXX-XXXX-XXXX</code></div>
+    <div class="gate-input-wrap">
+      <input class="gate-input" id="license-key-input" type="text"
+        placeholder="MSA-XXXX-XXXX-XXXX" maxlength="19"
+        onkeydown="if(event.key==='Enter')activateLicense()"
+        oninput="formatKeyInput(this)">
+      <span class="gate-input-icon">🔑</span>
+    </div>
+    <div class="gate-error" id="gate-error">
+      <span>⚠</span><span id="gate-error-msg">Invalid license key.</span>
+    </div>
+    <button class="gate-btn" id="activate-btn" onclick="activateLicense()" style="margin-top:16px">
+      <div class="gate-spinner"></div>
+      <span class="btn-label">Activate License</span>
+    </button>
+    <div class="gate-footer">
+      <strong>Offline use is not supported.</strong><br>
+      An active internet connection is required to validate your license.<br>
+      License data is securely verified against our server.
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ READ-ONLY BANNER ═══════════════════ -->
+<div id="readonly-banner">
+  <span>⚠ READ-ONLY MODE — Your license expired on <strong id="ro-expiry-date">—</strong>. Analysis is disabled. Contact your administrator to renew.</span>
+  <div class="ro-actions">
+    <button class="ro-btn" onclick="showLicenseInfo()">License Info</button>
+    <button class="ro-btn" onclick="logoutLicense()">🔓 Change Key</button>
+  </div>
+</div>
+
+<!-- ═══════════════════ MAIN APP ═══════════════════ -->
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-pill">MSA</span>
+    <div>
+      <div class="brand-name">Measurement System Analysis</div>
+      <div class="brand-sub">Gauge R&R · Bias · Stability · Attribute</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;flex:1;justify-content:center">
+    <div id="license-chip">
+      <span class="chip-dot"></span>
+      <span id="chip-company">Licensed</span>
+      <span style="color:var(--text3);font-size:10px">·</span>
+      <span id="chip-expiry" style="font-size:10px;color:var(--text3)"></span>
+    </div>
+  </div>
+  <div class="top-actions">
+    <div class="theme-wrap">
+      <button class="theme-btn" onclick="toggleThemePanel()">
+        <div class="t-dots" id="tdots">
+          <span class="t-dot" style="background:#4f9cf9"></span>
+          <span class="t-dot" style="background:#34d399"></span>
+          <span class="t-dot" style="background:#f59e0b"></span>
+        </div>Theme
+      </button>
+      <div class="theme-panel" id="theme-panel">
+        <div class="theme-panel-title">Choose Theme</div>
+        <div class="theme-grid">
+          <button class="swatch active" onclick="applyTheme('',this)"><div style="display:flex;gap:2px"><span class="t-dot" style="background:#4f9cf9"></span><span class="t-dot" style="background:#34d399"></span><span class="t-dot" style="background:#f59e0b"></span></div><div class="swatch-name">Midnight</div></button>
+          <button class="swatch" onclick="applyTheme('coral',this)"><div style="display:flex;gap:2px"><span class="t-dot" style="background:#ff6b35"></span><span class="t-dot" style="background:#ffd23f"></span><span class="t-dot" style="background:#06ffa5"></span></div><div class="swatch-name">Ember</div></button>
+          <button class="swatch" onclick="applyTheme('arctic',this)"><div style="display:flex;gap:2px"><span class="t-dot" style="background:#2563eb"></span><span class="t-dot" style="background:#059669"></span><span class="t-dot" style="background:#d97706"></span></div><div class="swatch-name">Arctic</div></button>
+          <button class="swatch" onclick="applyTheme('forest',this)"><div style="display:flex;gap:2px"><span class="t-dot" style="background:#00ff88"></span><span class="t-dot" style="background:#ffdd00"></span><span class="t-dot" style="background:#00ccff"></span></div><div class="swatch-name">Forest</div></button>
+          <button class="swatch" onclick="applyTheme('dusk',this)"><div style="display:flex;gap:2px"><span class="t-dot" style="background:#c084fc"></span><span class="t-dot" style="background:#34d399"></span><span class="t-dot" style="background:#fbbf24"></span></div><div class="swatch-name">Dusk</div></button>
+          <button class="swatch" onclick="applyTheme('steel',this)"><div style="display:flex;gap:2px"><span class="t-dot" style="background:#60a5fa"></span><span class="t-dot" style="background:#4ade80"></span><span class="t-dot" style="background:#fb923c"></span></div><div class="swatch-name">Steel</div></button>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-sm" onclick="loadGRRDemo()" id="btn-demo">⚡ Demo</button>
+    <button class="btn btn-sm btn-red" onclick="clearAll()">✕ Clear</button>
+    <button class="btn btn-sm btn-green" onclick="runCurrentAnalysis()" id="btn-analyse">▶ Analyse</button>
+    <button class="btn btn-sm btn-accent" onclick="window.print()">⎙ Print</button>
+    <button class="btn btn-sm" onclick="logoutLicense()" title="Change License Key" style="padding:4px 8px">🔓</button>
+  </div>
+</header>
+
+<div class="layout">
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sb-sec">
+    <div class="sb-title">Study Details</div>
+    <div class="fg"><label class="fl">Company / Plant</label><input class="fi" id="f-company" placeholder="Company name"></div>
+    <div class="fg"><label class="fl">Customer</label><input class="fi" id="f-customer" placeholder="Customer name"></div>
+    <div class="fi-row">
+      <div class="fg"><label class="fl">Study Date</label><input class="fi" id="f-date" type="date"></div>
+      <div class="fg"><label class="fl">Study No.</label><input class="fi" id="f-studyno" placeholder="MSA-001"></div>
+    </div>
+    <div class="fg"><label class="fl">Prepared By</label><input class="fi" id="f-prepby" placeholder="Engineer name"></div>
+  </div>
+  <div class="sb-sec">
+    <div class="sb-title">Part &amp; Gauge</div>
+    <div class="fg"><label class="fl">Part Name</label><input class="fi" id="f-partname" placeholder="e.g. Bearing Housing"></div>
+    <div class="fg"><label class="fl">Part Number</label><input class="fi" id="f-partno" placeholder="e.g. BHC-391-A"></div>
+    <div class="fg"><label class="fl">Characteristic</label><input class="fi" id="f-char" placeholder="e.g. OD Diameter (mm)"></div>
+    <div class="fg"><label class="fl">Gauge / Instrument</label><input class="fi" id="f-gauge" placeholder="e.g. Vernier Caliper"></div>
+    <div class="fg"><label class="fl">Gauge Serial No.</label><input class="fi" id="f-gaugeno" placeholder="e.g. VC-2024-07"></div>
+  </div>
+  <div class="sb-sec">
+    <div class="sb-title">Specification Limits</div>
+    <div class="fi-row">
+      <div class="fg"><label class="fl">Nominal</label><input class="fi" id="f-nominal" type="number" step="any" placeholder="391.40"></div>
+      <div class="fg"><label class="fl">Tolerance ±</label><input class="fi" id="f-tol" type="number" step="any" placeholder="2.00"></div>
+    </div>
+    <div class="fi-row">
+      <div class="fg"><label class="fl">USL</label><input class="fi" id="f-usl" type="number" step="any" placeholder="393.40"></div>
+      <div class="fg"><label class="fl">LSL</label><input class="fi" id="f-lsl" type="number" step="any" placeholder="389.40"></div>
+    </div>
+  </div>
+  <div class="sb-sec">
+    <div class="sb-title">Gauge R&amp;R Settings</div>
+    <div class="fg"><label class="fl">No. of Operators</label><select class="fi" id="f-ops"><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option></select></div>
+    <div class="fg"><label class="fl">No. of Parts</label><select class="fi" id="f-parts"><option value="5">5</option><option value="10" selected>10</option><option value="15">15</option></select></div>
+    <div class="fg"><label class="fl">No. of Replicates</label><select class="fi" id="f-reps"><option value="2" selected>2</option><option value="3">3</option></select></div>
+    <div class="fg"><label class="fl">Study Variation (σ multiplier)</label><select class="fi" id="f-sv"><option value="5.15">5.15 (99%)</option><option value="6" selected>6 (99.73%)</option></select></div>
+  </div>
+  <div class="sb-sec">
+    <div class="sb-title">AIAG Acceptance Criteria</div>
+    <div class="threshold-indicator th-excellent"><div class="th-dot" style="background:var(--green)"></div>Excellent: %GRR &lt; 10%</div>
+    <div class="threshold-indicator th-acceptable"><div class="th-dot" style="background:var(--yellow)"></div>Acceptable: 10–30%</div>
+    <div class="threshold-indicator th-poor"><div class="th-dot" style="background:var(--red)"></div>Poor: %GRR ≥ 30%</div>
+    <div style="margin-top:8px;font-size:10px;color:var(--text3)">ndc ≥ 5 required</div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+  <nav class="module-tabs">
+    <button class="module-tab active" onclick="switchModule('grr',this)">📐 Gauge R&amp;R</button>
+    <button class="module-tab" onclick="switchModule('bias',this)">🎯 Bias &amp; Linearity</button>
+    <button class="module-tab" onclick="switchModule('stability',this)">📊 Stability</button>
+    <button class="module-tab" onclick="switchModule('attribute',this)">🏷️ Attribute MSA</button>
+  </nav>
+
+  <!-- GAUGE R&R -->
+  <div id="mod-grr" class="module-panel active">
+    <nav class="sub-tabs">
+      <button class="sub-tab active" onclick="switchSub('grr','data',this)">📋 Data Input</button>
+      <button class="sub-tab" onclick="switchSub('grr','anova',this)">📊 ANOVA Method</button>
+      <button class="sub-tab" onclick="switchSub('grr','avgr',this)">📈 Avg &amp; Range</button>
+      <button class="sub-tab" onclick="switchSub('grr','charts',this)">📉 Charts</button>
+      <button class="sub-tab" onclick="switchSub('grr','variance',this)">🥧 Variance Components</button>
+    </nav>
+    <div id="grr-data" class="sub-panel active">
+      <div class="data-input-grid">
+        <div>
+          <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-xs" onclick="loadGRRDemo()">⚡ Demo Data</button>
+            <button class="btn btn-xs" onclick="formatGRRData()">⚙ Format</button>
+            <button class="btn btn-xs btn-red" onclick="clearGRRData()">✕ Clear</button>
+            <span style="font-size:10px;color:var(--text3)">Operator | Part | Rep1 ... RepN</span>
+          </div>
+          <div class="upload-zone" id="grr-upload" onclick="document.getElementById('grr-file').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleGRRDrop(event)">
+            <div style="font-size:24px">📂</div>
+            <p><strong>Upload CSV/TXT</strong> or drag &amp; drop</p>
+            <p>Col 1: Operator, Col 2: Part, Cols 3+: Measurements</p>
+            <input type="file" id="grr-file" accept=".csv,.txt" onchange="handleGRRFile(event)">
+          </div>
+          <textarea class="dt" id="grr-input" placeholder="Paste data here:&#10;A&#9;1&#9;391.02&#9;391.05&#10;A&#9;2&#9;390.97&#9;391.01&#10;..."></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+            <button class="btn btn-green" id="btn-run-grr" onclick="runGRR()">▶ Run Gauge R&amp;R</button>
+            <span id="grr-status" style="font-size:10px;color:var(--text3)"></span>
+          </div>
+        </div>
+        <div class="card" style="height:100%">
+          <div class="card-title">Data Format Guide</div>
+          <div style="font-size:11px;color:var(--text2);line-height:1.9">
+            <div><strong style="color:var(--a1)">Column Layout:</strong></div>
+            <div>• <strong>Col 1:</strong> Operator (A, B, C)</div>
+            <div>• <strong>Col 2:</strong> Part number (1–10)</div>
+            <div>• <strong>Col 3+:</strong> Measurement replicates</div>
+            <div style="margin-top:8px"><strong style="color:var(--a1)">Standard Study:</strong></div>
+            <div>3 operators × 10 parts × 2 reps = 60 rows</div>
+            <div style="margin-top:8px"><strong style="color:var(--a3)">Separators accepted:</strong></div>
+            <div>Tab, comma, semicolon, or spaces</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="grr-anova" class="sub-panel">
+      <div id="grr-anova-empty" class="empty"><div class="empty-icon">📊</div><div class="empty-title">No Analysis Yet</div><div style="font-size:12px">Load data and click ▶ Run Gauge R&R</div></div>
+      <div id="grr-anova-content" style="display:none">
+        <div class="kpi-grid kpi-grid-5" id="anova-kpi"></div>
+        <div class="sec-div">ANOVA Table</div>
+        <div class="card"><div class="tbl-wrap"><table class="t" id="anova-table"></table></div></div>
+        <div class="sec-div">Gauge R&amp;R Summary</div>
+        <div class="card"><div class="tbl-wrap"><table class="t" id="anova-summary-table"></table></div></div>
+        <div id="anova-verdict" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+    </div>
+    <div id="grr-avgr" class="sub-panel">
+      <div id="grr-avgr-empty" class="empty"><div class="empty-icon">📈</div><div class="empty-title">No Analysis Yet</div></div>
+      <div id="grr-avgr-content" style="display:none">
+        <div class="kpi-grid kpi-grid-5" id="avgr-kpi"></div>
+        <div class="sec-div">Average &amp; Range Calculations</div>
+        <div class="card"><div class="tbl-wrap"><table class="t" id="avgr-table"></table></div></div>
+        <div class="sec-div">Operator Summary</div>
+        <div class="card"><div class="tbl-wrap"><table class="t" id="avgr-op-table"></table></div></div>
+        <div class="sec-div">%Contribution Summary</div>
+        <div class="card"><div class="tbl-wrap"><table class="t" id="avgr-summary-table"></table></div></div>
+        <div id="avgr-verdict" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+    </div>
+    <div id="grr-charts" class="sub-panel">
+      <div id="grr-charts-empty" class="empty"><div class="empty-icon">📉</div><div class="empty-title">Run Analysis First</div></div>
+      <div id="grr-charts-content" style="display:none">
+        <div class="chart-grid-2">
+          <div class="chart-wrap"><div class="cw-title">X̄ Chart by Operator</div><div class="cw-sub" id="xbar-cl-sub">—</div><canvas id="ch-xbar" height="180"></canvas></div>
+          <div class="chart-wrap"><div class="cw-title">R Chart by Operator</div><div class="cw-sub" id="r-cl-sub">—</div><canvas id="ch-r" height="180"></canvas></div>
+        </div>
+        <div class="chart-grid-2">
+          <div class="chart-wrap"><div class="cw-title">Measurements by Part</div><canvas id="ch-bypart" height="180"></canvas></div>
+          <div class="chart-wrap"><div class="cw-title">Operator Comparison</div><canvas id="ch-opbox" height="180"></canvas></div>
+        </div>
+        <div class="chart-grid-2">
+          <div class="chart-wrap"><div class="cw-title">Part × Operator Interaction</div><canvas id="ch-interact" height="180"></canvas></div>
+          <div class="chart-wrap"><div class="cw-title">Measurement Run Chart</div><canvas id="ch-run" height="180"></canvas></div>
+        </div>
+      </div>
+    </div>
+    <div id="grr-variance" class="sub-panel">
+      <div id="grr-var-empty" class="empty"><div class="empty-icon">🥧</div><div class="empty-title">Run Analysis First</div></div>
+      <div id="grr-var-content" style="display:none">
+        <div class="kpi-grid kpi-grid-4" id="var-kpi"></div>
+        <div class="sec-div">Variance Component Breakdown</div>
+        <div class="card"><div id="vc-bar-wrap"></div><div id="vc-legend"></div></div>
+        <div class="chart-grid-2">
+          <div class="chart-wrap"><div class="cw-title">% Study Variation</div><canvas id="ch-vc-bar" height="200"></canvas></div>
+          <div class="chart-wrap"><div class="cw-title">% Contribution (Pie)</div><canvas id="ch-vc-pie" height="200"></canvas></div>
+        </div>
+        <div class="card"><div class="tbl-wrap"><table class="t" id="vc-table"></table></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BIAS & LINEARITY -->
+  <div id="mod-bias" class="module-panel">
+    <nav class="sub-tabs">
+      <button class="sub-tab active" onclick="switchSub('bias','data',this)">📋 Data Input</button>
+      <button class="sub-tab" onclick="switchSub('bias','bias',this)">🎯 Bias Analysis</button>
+      <button class="sub-tab" onclick="switchSub('bias','linearity',this)">📏 Linearity</button>
+    </nav>
+    <div id="bias-data" class="sub-panel active">
+      <div class="card">
+        <div class="card-title">Bias &amp; Linearity Data</div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+          <button class="btn btn-xs" onclick="loadBiasDemo()">⚡ Demo</button>
+          <button class="btn btn-xs btn-red" onclick="clearBiasData()">✕ Clear</button>
+          <span style="font-size:10px;color:var(--text3)">Reference Value | Measurements...</span>
+        </div>
+        <div class="upload-zone" style="margin-bottom:10px" onclick="document.getElementById('bias-file').click()">
+          <div style="font-size:20px">📂</div><p><strong>Upload CSV/TXT</strong></p>
+          <input type="file" id="bias-file" accept=".csv,.txt" onchange="handleBiasFile(event)">
+        </div>
+        <textarea class="dt" id="bias-input" placeholder="Reference&#9;M1&#9;M2&#9;M3&#9;M4&#9;M5&#10;389.40&#9;389.35&#9;389.42&#9;389.38&#9;389.40&#9;389.36"></textarea>
+        <div style="margin-top:8px"><button class="btn btn-green" id="btn-run-bias" onclick="runBias()">▶ Run Bias &amp; Linearity</button></div>
+      </div>
+    </div>
+    <div id="bias-bias" class="sub-panel">
+      <div id="bias-empty" class="empty"><div class="empty-icon">🎯</div><div class="empty-title">No Analysis Yet</div></div>
+      <div id="bias-content" style="display:none">
+        <div class="kpi-grid kpi-grid-4" id="bias-kpi"></div>
+        <div class="chart-grid-2">
+          <div class="chart-wrap"><div class="cw-title">Bias Histogram</div><canvas id="ch-bias-hist" height="200"></canvas></div>
+          <div class="chart-wrap"><div class="cw-title">Bias Run Chart</div><canvas id="ch-bias-run" height="200"></canvas></div>
+        </div>
+        <div class="card"><div class="tbl-wrap"><table class="t" id="bias-table"></table></div></div>
+        <div id="bias-verdict" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+    </div>
+    <div id="bias-linearity" class="sub-panel">
+      <div id="linearity-empty" class="empty"><div class="empty-icon">📏</div><div class="empty-title">No Analysis Yet</div></div>
+      <div id="linearity-content" style="display:none">
+        <div class="kpi-grid kpi-grid-4" id="linearity-kpi"></div>
+        <div class="chart-wrap-full"><div class="cw-title">Linearity Plot (Bias vs. Reference)</div><canvas id="ch-linearity" height="220"></canvas></div>
+        <div class="card"><div class="tbl-wrap"><table class="t" id="linearity-table"></table></div></div>
+        <div id="linearity-verdict" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STABILITY -->
+  <div id="mod-stability" class="module-panel">
+    <nav class="sub-tabs">
+      <button class="sub-tab active" onclick="switchSub('stability','data',this)">📋 Data Input</button>
+      <button class="sub-tab" onclick="switchSub('stability','results',this)">📊 Results</button>
+    </nav>
+    <div id="stability-data" class="sub-panel active">
+      <div class="card">
+        <div class="card-title">Stability Study Data</div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+          <button class="btn btn-xs" onclick="loadStabilityDemo()">⚡ Demo</button>
+          <button class="btn btn-xs btn-red" onclick="clearStabilityData()">✕ Clear</button>
+          <span style="font-size:10px;color:var(--text3)">Rows = time periods, Cols = measurements per period</span>
+        </div>
+        <div class="upload-zone" style="margin-bottom:10px" onclick="document.getElementById('stab-file').click()">
+          <div style="font-size:20px">📂</div><p><strong>Upload CSV/TXT</strong></p>
+          <input type="file" id="stab-file" accept=".csv,.txt" onchange="handleStabFile(event)">
+        </div>
+        <textarea class="dt" id="stab-input" placeholder="M1&#9;M2&#9;M3&#9;M4&#9;M5&#10;391.02&#9;391.05&#9;390.98&#9;391.01&#9;391.03"></textarea>
+        <div style="margin-top:8px"><button class="btn btn-green" id="btn-run-stab" onclick="runStability()">▶ Run Stability Analysis</button></div>
+      </div>
+    </div>
+    <div id="stability-results" class="sub-panel">
+      <div id="stab-empty" class="empty"><div class="empty-icon">📊</div><div class="empty-title">No Analysis Yet</div></div>
+      <div id="stab-content" style="display:none">
+        <div class="kpi-grid kpi-grid-4" id="stab-kpi"></div>
+        <div class="chart-grid-2">
+          <div class="chart-wrap"><div class="cw-title">X̄ Control Chart</div><canvas id="ch-stab-xbar" height="200"></canvas></div>
+          <div class="chart-wrap"><div class="cw-title">R Control Chart</div><canvas id="ch-stab-r" height="200"></canvas></div>
+        </div>
+        <div class="chart-wrap-full"><div class="cw-title">Individual Measurements Run Chart</div><canvas id="ch-stab-run" height="150"></canvas></div>
+        <div class="card"><div class="tbl-wrap"><table class="t" id="stab-table"></table></div></div>
+        <div id="stab-verdict" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ATTRIBUTE MSA -->
+  <div id="mod-attribute" class="module-panel">
+    <nav class="sub-tabs">
+      <button class="sub-tab active" onclick="switchSub('attribute','data',this)">📋 Data Input</button>
+      <button class="sub-tab" onclick="switchSub('attribute','results',this)">📊 Kappa &amp; Agreement</button>
+    </nav>
+    <div id="attribute-data" class="sub-panel active">
+      <div class="card">
+        <div class="card-title">Attribute MSA Data</div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+          <button class="btn btn-xs" onclick="loadAttributeDemo()">⚡ Demo</button>
+          <button class="btn btn-xs btn-red" onclick="clearAttributeData()">✕ Clear</button>
+          <span style="font-size:10px;color:var(--text3)">Part | Ref | Op1_R1 | Op1_R2 | Op2_R1 | Op2_R2 ... (P/F or 1/0)</span>
+        </div>
+        <div class="upload-zone" style="margin-bottom:10px" onclick="document.getElementById('attr-file').click()">
+          <div style="font-size:20px">📂</div><p><strong>Upload CSV/TXT</strong></p>
+          <input type="file" id="attr-file" accept=".csv,.txt" onchange="handleAttrFile(event)">
+        </div>
+        <textarea class="dt" id="attr-input" placeholder="Part&#9;Reference&#9;A_R1&#9;A_R2&#9;B_R1&#9;B_R2&#9;C_R1&#9;C_R2&#10;1&#9;P&#9;P&#9;P&#9;P&#9;P&#9;P&#9;P"></textarea>
+        <div style="margin-top:8px"><button class="btn btn-green" id="btn-run-attr" onclick="runAttribute()">▶ Run Attribute MSA</button></div>
+      </div>
+    </div>
+    <div id="attribute-results" class="sub-panel">
+      <div id="attr-empty" class="empty"><div class="empty-icon">🏷️</div><div class="empty-title">No Analysis Yet</div></div>
+      <div id="attr-content" style="display:none">
+        <div class="kpi-grid kpi-grid-4" id="attr-kpi"></div>
+        <div class="sec-div">Kappa by Operator</div>
+        <div class="card"><div class="tbl-wrap"><table class="t" id="attr-kappa-table"></table></div></div>
+        <div class="sec-div">Agreement Matrix</div>
+        <div class="card"><div class="tbl-wrap"><table class="t" id="attr-agree-table"></table></div></div>
+        <div class="chart-grid-2">
+          <div class="chart-wrap"><div class="cw-title">% Agreement by Operator</div><canvas id="ch-attr-agree" height="200"></canvas></div>
+          <div class="chart-wrap"><div class="cw-title">Kappa Values</div><canvas id="ch-attr-kappa" height="200"></canvas></div>
+        </div>
+        <div id="attr-verdict" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+    </div>
+  </div>
+</main>
+</div>
+
+<div class="notif hide" id="notif"></div>
+
+<!-- ═══════════════════ LICENSE INFO MODAL ═══════════════════ -->
+<div id="license-modal" style="display:none;position:fixed;inset:0;z-index:800;background:rgba(0,0,0,0.6);align-items:center;justify-content:center">
+  <div style="background:var(--surf);border:1px solid var(--border2);border-radius:16px;padding:32px;width:400px;max-width:95vw;box-shadow:0 24px 60px rgba(0,0,0,0.5)">
+    <div style="font-size:16px;font-weight:700;margin-bottom:20px;display:flex;align-items:center;gap:8px">
+      🔑 License Information
+    </div>
+    <div id="license-modal-body" style="font-size:12px;line-height:2;color:var(--text2)"></div>
+    <button class="btn btn-green" style="margin-top:20px;width:100%" onclick="document.getElementById('license-modal').style.display='none'">Close</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+'use strict';
+// ═══════════════════════════════════════════════════════
+//  CONSTANTS & STATE
+// ═══════════════════════════════════════════════════════
+const D4={2:3.267,3:2.574,4:2.282,5:2.114};
+const d2={2:1.128,3:1.693,4:2.059,5:2.326};
+const A2={2:1.880,3:1.023,4:0.729,5:0.577};
+let charts={}, grrData=null, biasData=null, stabData=null, attrData=null;
+let isReadOnly=false, currentLicense=null;
+const CV=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const SESSION_KEY='msa_license_session';
+
+// ═══════════════════════════════════════════════════════
+//  LICENSE GATE
+// ═══════════════════════════════════════════════════════
+function formatKeyInput(el){
+  let v=el.value.replace(/[^A-Za-z0-9]/g,'').toUpperCase();
+  let out='';
+  for(let i=0;i<Math.min(v.length,16);i++){
+    if(i===3||i===7||i===11) out+='-';
+    out+=v[i];
+  }
+  el.value=out;
+}
+
+async function activateLicense(){
+  const key=document.getElementById('license-key-input').value.trim();
+  const btn=document.getElementById('activate-btn');
+  const errEl=document.getElementById('gate-error');
+  const errMsg=document.getElementById('gate-error-msg');
+
+  if(!key){showGateError('Please enter your license key.');return;}
+  if(!window.__msaFirebaseReady){showGateError('Connecting to server... please wait.');return;}
+
+  btn.classList.add('loading');btn.disabled=true;
+  errEl.classList.remove('show');
+
+  try{
+    const result=await window.__msaValidate(key);
+    if(result.valid){
+      currentLicense={key,...result.data};
+      // Store in sessionStorage (expires when tab closes)
+      sessionStorage.setItem(SESSION_KEY,JSON.stringify({
+        key,company:result.data.company,customerName:result.data.customerName,
+        expiryDate:result.data.expiryDate?.toString(),readOnly:result.readOnly,
+        ts:Date.now()
+      }));
+      unlockApp(result.readOnly,result.data);
+    } else {
+      const msgs={
+        INVALID_KEY:'License key not found. Please check and try again.',
+        REVOKED:'This license has been revoked. Contact your administrator.',
+        OFFLINE:'Cannot connect to license server. An internet connection is required.',
+        NO_KEY:'Please enter your license key.',
+        ERROR:'Verification error. Please try again.'
+      };
+      showGateError(msgs[result.reason]||'License validation failed.');
+    }
+  } catch(e){
+    showGateError('Connection error. Please check your internet and try again.');
+  } finally{
+    btn.classList.remove('loading');btn.disabled=false;
+  }
+}
+
+function showGateError(msg){
+  document.getElementById('gate-error-msg').textContent=msg;
+  document.getElementById('gate-error').classList.add('show');
+}
+
+function unlockApp(readOnly,data){
+  document.getElementById('license-gate').style.display='none';
+  isReadOnly=readOnly;
+  if(readOnly){
+    applyReadOnlyMode(data);
+  } else {
+    document.getElementById('license-chip').classList.add('visible');
+    document.getElementById('chip-company').textContent=data.company||data.customerName||'Licensed';
+    const exp=data.expiryDate instanceof Date?data.expiryDate:new Date(data.expiryDate);
+    const daysLeft=Math.ceil((exp-new Date())/(1000*60*60*24));
+    document.getElementById('chip-expiry').textContent=`Expires ${exp.toLocaleDateString('en-IN')} (${daysLeft}d)`;
+  }
+}
+
+function applyReadOnlyMode(data){
+  isReadOnly=true;
+  const banner=document.getElementById('readonly-banner');
+  banner.classList.add('visible');
+  const exp=data.expiryDate instanceof Date?data.expiryDate:new Date(data.expiryDate);
+  document.getElementById('ro-expiry-date').textContent=exp.toLocaleDateString('en-IN');
+  // Disable all action buttons
+  ['btn-analyse','btn-demo','btn-run-grr','btn-run-bias','btn-run-stab','btn-run-attr'].forEach(id=>{
+    const el=document.getElementById(id);if(el){el.disabled=true;el.title='License expired — read-only mode';}
+  });
+  document.querySelectorAll('.btn-green,.btn-accent').forEach(b=>{b.disabled=true;});
+}
+
+function logoutLicense(){
+  sessionStorage.removeItem(SESSION_KEY);
+  location.reload();
+}
+
+function showLicenseInfo(){
+  if(!currentLicense){return;}
+  const exp=currentLicense.expiryDate instanceof Date?currentLicense.expiryDate:new Date(currentLicense.expiryDate);
+  const iss=currentLicense.issuedDate?.toDate?currentLicense.issuedDate.toDate():currentLicense.issuedDate?new Date(currentLicense.issuedDate):null;
+  document.getElementById('license-modal-body').innerHTML=`
+    <div><strong style="color:var(--a1)">License Key:</strong> ${currentLicense.key}</div>
+    <div><strong style="color:var(--a1)">Company:</strong> ${currentLicense.company||'—'}</div>
+    <div><strong style="color:var(--a1)">Customer:</strong> ${currentLicense.customerName||'—'}</div>
+    <div><strong style="color:var(--a1)">Email:</strong> ${currentLicense.email||'—'}</div>
+    <div><strong style="color:var(--a1)">Issued:</strong> ${iss?iss.toLocaleDateString('en-IN'):'—'}</div>
+    <div><strong style="color:var(--a1)">Expires:</strong> ${exp.toLocaleDateString('en-IN')}</div>
+    <div><strong style="color:var(--a1)">Features:</strong> ${(currentLicense.features||[]).join(', ')||'All'}</div>
+    <div><strong style="color:var(--a1)">Status:</strong> <span class="${isReadOnly?'td-bad':'td-ok'}">${isReadOnly?'⚠ EXPIRED':'✓ Active'}</span></div>
+    ${currentLicense.notes?`<div><strong style="color:var(--a1)">Notes:</strong> ${currentLicense.notes}</div>`:''}
+  `;
+  document.getElementById('license-modal').style.display='flex';
+}
+
+// Check session on load
+document.addEventListener('DOMContentLoaded',()=>{
+  // Wait for Firebase to be ready, then check session
+  const checkSession=()=>{
+    const sess=sessionStorage.getItem(SESSION_KEY);
+    if(sess){
+      try{
+        const s=JSON.parse(sess);
+        // Re-validate against Firestore on every load
+        if(window.__msaFirebaseReady){
+          revalidateSession(s.key);
+        } else {
+          document.addEventListener('firebase-ready',()=>revalidateSession(s.key),{once:true});
+        }
+      } catch(e){sessionStorage.removeItem(SESSION_KEY);}
+    }
+  };
+  checkSession();
+  document.getElementById('f-date').value=new Date().toISOString().split('T')[0];
+  document.getElementById('f-studyno').value='MSA-'+new Date().getFullYear()+'-001';
+});
+
+async function revalidateSession(key){
+  try{
+    const result=await window.__msaValidate(key);
+    if(result.valid){
+      currentLicense={key,...result.data};
+      unlockApp(result.readOnly,result.data);
+    } else {
+      sessionStorage.removeItem(SESSION_KEY);
+      // Gate remains visible
+    }
+  } catch(e){ /* gate remains */ }
+}
+
+// ═══════════════════════════════════════════════════════
+//  NAVIGATION & THEME
+// ═══════════════════════════════════════════════════════
+function switchModule(id,btn){
+  document.querySelectorAll('.module-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.module-tab').forEach(b=>b.classList.remove('active'));
+  document.getElementById('mod-'+id).classList.add('active');btn.classList.add('active');
+}
+function switchSub(mod,id,btn){
+  const panel=document.getElementById('mod-'+mod);
+  panel.querySelectorAll('.sub-panel').forEach(p=>p.classList.remove('active'));
+  panel.querySelectorAll('.sub-tab').forEach(b=>b.classList.remove('active'));
+  document.getElementById(mod+'-'+id).classList.add('active');btn.classList.add('active');
+}
+const TDOTS={'':['#4f9cf9','#34d399','#f59e0b'],coral:['#ff6b35','#ffd23f','#06ffa5'],arctic:['#2563eb','#059669','#d97706'],forest:['#00ff88','#ffdd00','#00ccff'],dusk:['#c084fc','#34d399','#fbbf24'],steel:['#60a5fa','#4ade80','#fb923c']};
+function applyTheme(t,btn){
+  document.documentElement.setAttribute('data-theme',t);
+  document.querySelectorAll('.swatch').forEach(b=>b.classList.remove('active'));btn.classList.add('active');
+  const c=TDOTS[t]||TDOTS[''];
+  document.getElementById('tdots').innerHTML=c.map(x=>`<span class="t-dot" style="background:${x}"></span>`).join('');
+  document.getElementById('theme-panel').classList.remove('open');
+  if(grrData)redrawGRRCharts();if(biasData)redrawBiasCharts();if(stabData)redrawStabCharts();if(attrData)redrawAttrCharts();
+}
+function toggleThemePanel(){document.getElementById('theme-panel').classList.toggle('open')}
+document.addEventListener('click',e=>{if(!document.querySelector('.theme-wrap').contains(e.target))document.getElementById('theme-panel').classList.remove('open');});
+
+// ═══════════════════════════════════════════════════════
+//  UTILITIES
+// ═══════════════════════════════════════════════════════
+function notify(msg,type='ok'){const el=document.getElementById('notif');el.textContent=msg;el.className=`notif ${type}`;clearTimeout(el._t);el._t=setTimeout(()=>el.classList.add('hide'),3500);}
+function mean(a){return a.reduce((s,v)=>s+v,0)/a.length}
+function stdev(a){const m=mean(a);return Math.sqrt(a.reduce((s,v)=>s+(v-m)**2,0)/(a.length-1))}
+function destroyChart(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
+function showResults(eId,cId){document.getElementById(eId).style.display='none';document.getElementById(cId).style.display='block';}
+function parseDelimited(text){return text.trim().split('\n').map(r=>r.trim().split(/[\t,;]+/).map(v=>v.trim())).filter(r=>r.length>1&&r.some(v=>v!==''));}
+function fDist(F){if(F>10)return 0.0001;if(F>5)return 0.001;if(F>3)return 0.01;if(F>2)return 0.05;return 0.1;}
+function baseOpts(xL='',yL=''){return{responsive:true,animation:{duration:400},plugins:{legend:{display:true,labels:{color:CV('--text2'),font:{family:'Outfit',size:10},boxWidth:10}},tooltip:{backgroundColor:CV('--surf2'),titleColor:CV('--text'),bodyColor:CV('--text2'),borderColor:CV('--border2'),borderWidth:1}},scales:{x:{ticks:{color:CV('--text2'),font:{size:10}},grid:{color:CV('--border')+'55'},title:{display:!!xL,text:xL,color:CV('--text3'),font:{size:10}}},y:{ticks:{color:CV('--text2'),font:{size:10,family:'JetBrains Mono'}},grid:{color:CV('--border')+'55'},title:{display:!!yL,text:yL,color:CV('--text3'),font:{size:10}}}}};}
+function autoFillSpec(){const n=parseFloat(document.getElementById('f-nominal').value),t=parseFloat(document.getElementById('f-tol').value);if(!isNaN(n)&&!isNaN(t)){document.getElementById('f-usl').value=(n+t).toFixed(3);document.getElementById('f-lsl').value=(n-t).toFixed(3);}}
+document.getElementById('f-nominal').addEventListener('input',autoFillSpec);
+document.getElementById('f-tol').addEventListener('input',autoFillSpec);
+
+// ═══════════════════════════════════════════════════════
+//  READ-ONLY GUARD
+// ═══════════════════════════════════════════════════════
+function guardAction(){
+  if(isReadOnly){notify('⚠ Read-only mode — license expired. Contact administrator.','err');return false;}
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════
+//  DEMO DATA
+// ═══════════════════════════════════════════════════════
+function loadGRRDemo(){
+  if(!guardAction())return;
+  const ops=['A','B','C'],pNum=10,reps=2;
+  const base=[391.02,390.95,391.18,391.30,390.88,391.25,391.05,391.35,390.92,391.10];
+  let rows=[];
+  ops.forEach((op,oi)=>Array.from({length:pNum},(_,pi)=>{
+    const ms=base[pi];
+    rows.push([op,pi+1,...Array.from({length:reps},()=>+(ms+(Math.random()-.5)*0.25+(oi-1)*0.08).toFixed(4))].join('\t'));
+  }));
+  document.getElementById('grr-input').value=rows.join('\n');
+  document.getElementById('f-company').value='Polyplastics Industries (I) Pvt. Ltd.';
+  document.getElementById('f-customer').value='ABC Automotive Components Ltd.';
+  document.getElementById('f-partname').value='Bearing Housing Cover';
+  document.getElementById('f-partno').value='BHC-391-A';
+  document.getElementById('f-char').value='OD Diameter (mm)';
+  document.getElementById('f-gauge').value='Vernier Caliper 0.01mm';
+  document.getElementById('f-gaugeno').value='VC-2024-007';
+  document.getElementById('f-nominal').value='391.40';
+  document.getElementById('f-tol').value='2.00';
+  document.getElementById('f-usl').value='393.40';
+  document.getElementById('f-lsl').value='389.40';
+  document.getElementById('f-date').value=new Date().toISOString().split('T')[0];
+  document.getElementById('f-prepby').value='Quality Engineer';
+  updateGRRStatus();
+  notify('Demo data loaded. Click ▶ Analyse.','ok');
+}
+function loadBiasDemo(){
+  if(!guardAction())return;
+  const refs=[389.4,390.0,390.7,391.4,392.1,392.8,393.4];
+  document.getElementById('bias-input').value=refs.map(r=>[r,...Array.from({length:6},()=>+(r+(Math.random()-.5)*0.15-0.05).toFixed(4))].join('\t')).join('\n');
+  notify('Bias demo loaded.','ok');
+}
+function loadStabilityDemo(){
+  if(!guardAction())return;
+  document.getElementById('stab-input').value=Array.from({length:20},()=>Array.from({length:5},()=>+(391.20+(Math.random()-.5)*0.3).toFixed(4)).join('\t')).join('\n');
+  notify('Stability demo loaded.','ok');
+}
+function loadAttributeDemo(){
+  if(!guardAction())return;
+  const n=20,ops=['A','B','C'],refs=Array.from({length:n},(_,i)=>i<14?'P':'F');
+  document.getElementById('attr-input').value=refs.map((ref,i)=>{
+    const cells=[i+1,ref];
+    ops.forEach(()=>{cells.push(Math.random()<0.95?ref:(ref==='P'?'F':'P'),Math.random()<0.95?ref:(ref==='P'?'F':'P'));});
+    return cells.join('\t');
+  }).join('\n');
+  notify('Attribute demo loaded.','ok');
+}
+function clearAll(){
+  ['grr-input','bias-input','stab-input','attr-input'].forEach(id=>document.getElementById(id).value='');
+  grrData=biasData=stabData=attrData=null;
+  ['grr-anova-content','grr-avgr-content','grr-charts-content','grr-var-content','bias-content','linearity-content','stab-content','attr-content'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  ['grr-anova-empty','grr-avgr-empty','grr-charts-empty','grr-var-empty','bias-empty','linearity-empty','stab-empty','attr-empty'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='flex';});
+  notify('Cleared.','ok');
+}
+function clearGRRData(){document.getElementById('grr-input').value='';updateGRRStatus();}
+function clearBiasData(){document.getElementById('bias-input').value='';}
+function clearStabilityData(){document.getElementById('stab-input').value='';}
+function clearAttributeData(){document.getElementById('attr-input').value='';}
+function updateGRRStatus(){const r=document.getElementById('grr-input').value.trim().split('\n').filter(x=>x.trim());document.getElementById('grr-status').textContent=r.length?`${r.length} rows`:''}
+document.getElementById('grr-input').addEventListener('input',updateGRRStatus);
+function readFile(f,t){const r=new FileReader();r.onload=e=>{document.getElementById(t).value=e.target.result;notify(`Loaded: ${f.name}`,'ok');};r.readAsText(f);}
+function handleGRRFile(e){const f=e.target.files[0];if(f)readFile(f,'grr-input');}
+function handleGRRDrop(e){e.preventDefault();document.getElementById('grr-upload').classList.remove('drag');const f=e.dataTransfer.files[0];if(f)readFile(f,'grr-input');}
+function handleBiasFile(e){const f=e.target.files[0];if(f)readFile(f,'bias-input');}
+function handleStabFile(e){const f=e.target.files[0];if(f)readFile(f,'stab-input');}
+function handleAttrFile(e){const f=e.target.files[0];if(f)readFile(f,'attr-input');}
+function formatGRRData(){const p=parseGRRRaw(document.getElementById('grr-input').value);if(!p.length){notify('Nothing to format.','err');return;}document.getElementById('grr-input').value=p.map(r=>[r.op,r.part,...r.meas.map(v=>v.toFixed(4))].join('\t')).join('\n');}
+
+// ═══════════════════════════════════════════════════════
+//  GAUGE R&R
+// ═══════════════════════════════════════════════════════
+function parseGRRRaw(text){return parseDelimited(text).map(r=>({op:r[0],part:parseInt(r[1])||1,meas:r.slice(2).map(Number).filter(v=>!isNaN(v))})).filter(r=>r.meas.length>0);}
+
+function runGRR(){
+  if(!guardAction())return;
+  const raw=parseGRRRaw(document.getElementById('grr-input').value);
+  if(raw.length<4){notify('Need at least 2 operators × 2 parts × 2 reps.','err');return;}
+  const ops=[...new Set(raw.map(r=>r.op))].sort();
+  const parts=[...new Set(raw.map(r=>r.part))].sort((a,b)=>a-b);
+  const nOp=ops.length,nPart=parts.length,nRep=raw[0].meas.length;
+  const SV=parseFloat(document.getElementById('f-sv').value)||6;
+  const USL=parseFloat(document.getElementById('f-usl').value),LSL=parseFloat(document.getElementById('f-lsl').value);
+  const tolerance=(!isNaN(USL)&&!isNaN(LSL))?(USL-LSL):null;
+  const data={};
+  ops.forEach(op=>{data[op]={};parts.forEach(p=>data[op][p]=[]);});
+  raw.forEach(r=>{if(data[r.op]&&data[r.op][r.part]!==undefined)data[r.op][r.part].push(...r.meas);});
+  const allMeas=raw.flatMap(r=>r.meas),grandMean=mean(allMeas);
+  const partMeans=parts.map(p=>mean(ops.flatMap(op=>data[op][p])));
+  const SSP=nOp*nRep*partMeans.reduce((a,m)=>a+(m-grandMean)**2,0);
+  const opMeans=ops.map(op=>mean(parts.flatMap(p=>data[op][p])));
+  const SSO=nPart*nRep*opMeans.reduce((a,m)=>a+(m-grandMean)**2,0);
+  const cellMeans={};
+  ops.forEach(op=>parts.forEach(p=>{cellMeans[op+'_'+p]=mean(data[op][p]);}));
+  const SSOP=nRep*ops.reduce((ac,op)=>ac+parts.reduce((a,p)=>{const cm=cellMeans[op+'_'+p];return a+(cm-opMeans[ops.indexOf(op)]-partMeans[parts.indexOf(p)]+grandMean)**2;},0),0);
+  const SSE=ops.reduce((ac,op)=>ac+parts.reduce((a,p)=>{const m=cellMeans[op+'_'+p];return a+data[op][p].reduce((s,v)=>s+(v-m)**2,0);},0),0);
+  const dfP=nPart-1,dfO=nOp-1,dfOP=dfP*dfO,dfE=nOp*nPart*(nRep-1);
+  const MSP=SSP/dfP,MSO=SSO/dfO,MSOP=SSOP/dfOP,MSE=SSE/dfE;
+  const FP=MSP/MSOP,FO=MSO/MSOP,FOP=MSOP/MSE;
+  const sigmaE2=MSE,sigmaOP2=Math.max(0,(MSOP-MSE)/nRep),sigmaO2=Math.max(0,(MSO-MSOP)/(nPart*nRep)),sigmaP2=Math.max(0,(MSP-MSOP)/(nOp*nRep));
+  const sigmaGRR2=sigmaE2+sigmaOP2+sigmaO2,sigmaTotal2=sigmaGRR2+sigmaP2;
+  const EV=Math.sqrt(sigmaE2),AV=Math.sqrt(sigmaO2+sigmaOP2),GRR=Math.sqrt(sigmaGRR2),PV=Math.sqrt(sigmaP2),TV=Math.sqrt(sigmaTotal2);
+  const pctGRR=(GRR/TV)*100,pctEV=(EV/TV)*100,pctAV=(AV/TV)*100,pctPV=(PV/TV)*100;
+  const ndc=Math.floor(1.41*(PV/GRR));
+  const PTratio=tolerance?((SV*GRR)/tolerance)*100:null;
+  grrData={ops,parts,data,nOp,nPart,nRep,SV,grandMean,allMeas,opMeans,partMeans,cellMeans,
+    ANOVA:{SSP,SSO,SSOP,SSE,MSP,MSO,MSOP,MSE,FP,FO,FOP,pP:fDist(FP),pO:fDist(FO),pOP:fDist(FOP),dfP,dfO,dfOP,dfE},
+    VC:{sigmaE2,sigmaO2,sigmaOP2,sigmaP2,sigmaGRR2,sigmaTotal2,EV,AV,GRR,PV,TV},
+    KPIs:{pctGRR,pctEV,pctAV,pctPV,ndc,PTratio,tolerance}};
+  renderANOVA(grrData);renderAvgRange(grrData);redrawGRRCharts();renderVC(grrData);
+  notify(`Gauge R&R complete: ${nOp}×${nPart}×${nRep}`,'ok');
+}
+
+function renderANOVA(d){
+  const{ANOVA:a,KPIs:k,VC:v}=d;
+  showResults('grr-anova-empty','grr-anova-content');
+  const sc=k.pctGRR<10?'kpi-a2':k.pctGRR<30?'kpi-a3':'kpi-red',vc=k.pctGRR<10?'kpi-v-green':k.pctGRR<30?'kpi-v-a3':'kpi-v-red';
+  document.getElementById('anova-kpi').innerHTML=[
+    {l:'%GRR',v:k.pctGRR.toFixed(2)+'%',s:k.pctGRR<10?'Excellent':k.pctGRR<30?'Acceptable':'Poor',cls:sc,vc},
+    {l:'P/T Ratio',v:k.PTratio?k.PTratio.toFixed(2)+'%':'N/A',s:'vs Tolerance',cls:'kpi-a1',vc:'kpi-v-a1'},
+    {l:'ndc',v:k.ndc,s:'Distinct Categories',cls:k.ndc>=5?'kpi-a2':'kpi-red',vc:k.ndc>=5?'kpi-v-green':'kpi-v-red'},
+    {l:'EV ('+d.SV+'σ)',v:(v.EV*d.SV).toFixed(4),s:'Repeatability',cls:'kpi-a4',vc:'kpi-v-a4'},
+    {l:'AV ('+d.SV+'σ)',v:(v.AV*d.SV).toFixed(4),s:'Reproducibility',cls:'kpi-a5',vc:'kpi-v-a5'},
+  ].map(c=>`<div class="kpi ${c.cls}"><div class="kpi-l">${c.l}</div><div class="kpi-v ${c.vc}">${c.v}</div><div class="kpi-s">${c.s}</div></div>`).join('');
+  document.getElementById('anova-table').innerHTML=`<tr><th>Source</th><th>SS</th><th>df</th><th>MS</th><th>F</th><th>P-Value</th><th>Sig.</th></tr>`
+  +[['Parts',a.SSP,a.dfP,a.MSP,a.FP,a.pP],['Operators',a.SSO,a.dfO,a.MSO,a.FO,a.pO],['Interaction',a.SSOP,a.dfOP,a.MSOP,a.FOP,a.pOP],['Repeatability',a.SSE,a.dfE,a.MSE,'—','—']]
+  .map(([s,ss,df,ms,F,p])=>`<tr><td class="td-hl">${s}</td><td class="td-num">${isNaN(ss)?ss:ss.toFixed(6)}</td><td>${df}</td><td class="td-num">${isNaN(ms)?ms:ms.toFixed(6)}</td><td class="td-num">${F==='—'?F:parseFloat(F).toFixed(3)}</td><td class="${p!=='—'&&p<0.05?'td-ok':'td-num'}">${p!=='—'?p.toFixed(4):p}</td><td>${p!=='—'?(p<0.001?'***':p<0.01?'**':p<0.05?'*':'ns'):'—'}</td></tr>`).join('');
+  document.getElementById('anova-summary-table').innerHTML=`<tr><th>Source</th><th>Variance σ²</th><th>Std Dev σ</th><th>Study Var (${d.SV}σ)</th><th>%Study Var</th><th>Status</th></tr>`
+  +[['Total Gauge R&R',v.sigmaGRR2,v.GRR,d.SV*v.GRR,k.pctGRR],['  EV (Repeatability)',v.sigmaE2,v.EV,d.SV*v.EV,k.pctEV],['  AV (Reproducibility)',v.sigmaO2+v.sigmaOP2,v.AV,d.SV*v.AV,k.pctAV],['Part-to-Part (PV)',v.sigmaP2,v.PV,d.SV*v.PV,k.pctPV],['Total Variation (TV)',v.sigmaTotal2,v.TV,d.SV*v.TV,100]]
+  .map(([s,s2,sg,sv,p])=>{const cls=s.includes('R&R')?(p<10?'td-ok':p<30?'td-warn':'td-bad'):'td-num';return`<tr><td class="td-hl">${s}</td><td class="td-num">${s2.toFixed(6)}</td><td class="td-num">${sg.toFixed(5)}</td><td class="td-num">${sv.toFixed(5)}</td><td class="${cls}">${p.toFixed(2)}%</td><td class="${cls}">${s.includes('R&R')?(p<10?'✓ Excellent':p<30?'⚠ Acceptable':'✗ Poor'):'—'}</td></tr>`;}).join('');
+  const rb=k.pctGRR<10?'rb-pass':k.pctGRR<30?'rb-warn':'rb-fail';
+  const rt=k.pctGRR<10?'✓ Gauge ACCEPTABLE — Excellent':k.pctGRR<30?'⚠ MARGINALLY ACCEPTABLE — Monitor':'✗ Gauge NOT ACCEPTABLE — Action Required';
+  document.getElementById('anova-verdict').innerHTML=`<span class="result-badge ${rb}">${rt}</span><span class="result-badge ${k.ndc>=5?'rb-pass':'rb-fail'}">ndc = ${k.ndc} (${k.ndc>=5?'✓ Adequate':'✗ Insufficient'})</span>${k.PTratio?`<span class="result-badge ${k.PTratio<10?'rb-pass':k.PTratio<30?'rb-warn':'rb-fail'}">P/T = ${k.PTratio.toFixed(1)}%</span>`:''}`;
+}
+
+function renderAvgRange(d){
+  const{ops,parts,data,nOp,nPart,nRep,SV}=d;
+  showResults('grr-avgr-empty','grr-avgr-content');
+  const D4v=D4[nRep]||2.114,d2v=d2[nRep]||1.128;
+  const ranges={};ops.forEach(op=>parts.forEach(p=>{const m=data[op][p];ranges[op+'_'+p]=Math.max(...m)-Math.min(...m);}));
+  const opRbar=ops.map(op=>mean(parts.map(p=>ranges[op+'_'+p])));
+  const Rbar=mean(opRbar),UCL_R=D4v*Rbar;
+  const EV_AR=(Rbar/d2v)*SV;
+  const opAvgs=ops.map(op=>mean(parts.flatMap(p=>data[op][p])));
+  const opRange=Math.max(...opAvgs)-Math.min(...opAvgs);
+  const AV_AR=Math.sqrt(Math.max(0,((opRange/d2[nOp])*SV)**2-(EV_AR**2/(nPart*nRep))));
+  const GRR_AR=Math.sqrt(EV_AR**2+AV_AR**2);
+  const Rp=Math.max(...parts.map(p=>mean(ops.flatMap(op=>data[op][p]))))-Math.min(...parts.map(p=>mean(ops.flatMap(op=>data[op][p]))));
+  const PV_AR=(Rp/(d2[nPart]||2.970))*SV,TV_AR=Math.sqrt(GRR_AR**2+PV_AR**2);
+  const pctGRR_AR=(GRR_AR/TV_AR)*100,pctEV_AR=(EV_AR/TV_AR)*100,pctAV_AR=(AV_AR/TV_AR)*100,pctPV_AR=(PV_AR/TV_AR)*100;
+  const ndc_AR=Math.floor(1.41*(PV_AR/GRR_AR));
+  const sc2=pctGRR_AR<10?'kpi-a2':pctGRR_AR<30?'kpi-a3':'kpi-red',vc2=pctGRR_AR<10?'kpi-v-green':pctGRR_AR<30?'kpi-v-a3':'kpi-v-red';
+  document.getElementById('avgr-kpi').innerHTML=[
+    {l:'%GRR (Avg/Range)',v:pctGRR_AR.toFixed(2)+'%',s:pctGRR_AR<10?'Excellent':pctGRR_AR<30?'Acceptable':'Poor',cls:sc2,vc:vc2},
+    {l:'ndc',v:ndc_AR,s:'Distinct Categories',cls:ndc_AR>=5?'kpi-a2':'kpi-red',vc:ndc_AR>=5?'kpi-v-green':'kpi-v-red'},
+    {l:'R̄',v:Rbar.toFixed(5),s:'Average Range',cls:'kpi-a1',vc:'kpi-v-a1'},
+    {l:'UCL(R)',v:UCL_R.toFixed(5),s:`D4×R̄ (n=${nRep})`,cls:'kpi-a3',vc:'kpi-v-a3'},
+    {l:'Op X̄ Range',v:opRange.toFixed(5),s:'Max-Min operator mean',cls:'kpi-a5',vc:'kpi-v-a5'},
+  ].map(c=>`<div class="kpi ${c.cls}"><div class="kpi-l">${c.l}</div><div class="kpi-v ${c.vc}">${c.v}</div><div class="kpi-s">${c.s}</div></div>`).join('');
+  let rows='<tr>'+['Operator','Part',...Array.from({length:nRep},(_,i)=>'Rep '+(i+1)),'Mean','Range'].map(h=>`<th>${h}</th>`).join('')+'</tr>';
+  ops.forEach(op=>parts.forEach(p=>{const m=data[op][p];rows+=`<tr><td class="td-hl">${op}</td><td>${p}</td>${m.map(v=>`<td class="td-num">${v.toFixed(4)}</td>`).join('')}<td class="td-num">${mean(m).toFixed(4)}</td><td class="td-num">${(Math.max(...m)-Math.min(...m)).toFixed(4)}</td></tr>`;}));
+  document.getElementById('avgr-table').innerHTML=rows;
+  document.getElementById('avgr-op-table').innerHTML=`<tr><th>Operator</th><th>Mean</th><th>R̄</th><th>UCL(R)</th><th>Status</th></tr>`+ops.map((op,i)=>`<tr><td class="td-hl">${op}</td><td class="td-num">${opAvgs[i].toFixed(5)}</td><td class="td-num">${opRbar[i].toFixed(5)}</td><td class="td-num">${(D4v*opRbar[i]).toFixed(5)}</td><td class="${opRbar[i]>UCL_R?'td-bad':'td-ok'}">${opRbar[i]>UCL_R?'EXCEEDS UCL':'Within'}</td></tr>`).join('');
+  document.getElementById('avgr-summary-table').innerHTML=`<tr><th>Component</th><th>Value</th><th>%Study Var</th><th>Status</th></tr>`+[['GRR',GRR_AR,pctGRR_AR],['EV',EV_AR,pctEV_AR],['AV',AV_AR,pctAV_AR],['PV',PV_AR,pctPV_AR],['TV',TV_AR,100]].map(([s,v,p])=>{const cls=s==='GRR'?(p<10?'td-ok':p<30?'td-warn':'td-bad'):'td-num';return`<tr><td class="td-hl">${s}</td><td class="td-num">${v.toFixed(4)}</td><td class="${cls}">${p.toFixed(2)}%</td><td class="${cls}">${s==='GRR'?(p<10?'✓ Excellent':p<30?'⚠ Acceptable':'✗ Poor'):'—'}</td></tr>`;}).join('');
+  const rb=pctGRR_AR<10?'rb-pass':pctGRR_AR<30?'rb-warn':'rb-fail';
+  document.getElementById('avgr-verdict').innerHTML=`<span class="result-badge ${rb}">Avg/Range %GRR = ${pctGRR_AR.toFixed(2)}%</span><span class="result-badge ${ndc_AR>=5?'rb-pass':'rb-fail'}">ndc = ${ndc_AR}</span>`;
+}
+
+function redrawGRRCharts(){
+  if(!grrData)return;
+  showResults('grr-charts-empty','grr-charts-content');
+  const d=grrData,{ops,parts,data,nOp,nPart,nRep}=d;
+  const C=[CV('--a1'),CV('--a2'),CV('--a3'),CV('--a4'),CV('--a5')];
+  const cellMeans={},cellRanges={};
+  ops.forEach(op=>parts.forEach(p=>{cellMeans[op+'_'+p]=mean(data[op][p]);cellRanges[op+'_'+p]=Math.max(...data[op][p])-Math.min(...data[op][p]);}));
+  const Rbar=mean(ops.flatMap(op=>parts.map(p=>cellRanges[op+'_'+p])));
+  const UCL_R=D4[nRep]*Rbar,opPartMeans=ops.map(op=>parts.map(p=>cellMeans[op+'_'+p]));
+  const allMns=opPartMeans.flat(),mOfM=mean(allMns),UCL_X=mOfM+A2[nRep]*Rbar,LCL_X=mOfM-A2[nRep]*Rbar;
+  const lbl=parts.map(p=>'P'+p);
+  document.getElementById('xbar-cl-sub').textContent=`UCL=${UCL_X.toFixed(4)}  X̿=${mOfM.toFixed(4)}  LCL=${LCL_X.toFixed(4)}`;
+  document.getElementById('r-cl-sub').textContent=`UCL=${UCL_R.toFixed(4)}  R̄=${Rbar.toFixed(4)}  LCL=0`;
+  destroyChart('xbar');
+  charts['xbar']=new Chart(document.getElementById('ch-xbar'),{type:'line',data:{labels:lbl,datasets:[...ops.map((op,i)=>({label:'Op '+op,data:opPartMeans[i],borderColor:C[i],borderWidth:1.6,pointRadius:3,tension:.2})),{label:'UCL',data:Array(nPart).fill(UCL_X),borderColor:CV('--red'),borderWidth:1.2,borderDash:[5,3],pointRadius:0},{label:'CL',data:Array(nPart).fill(mOfM),borderColor:CV('--green'),borderWidth:1.5,borderDash:[4,3],pointRadius:0},{label:'LCL',data:Array(nPart).fill(LCL_X),borderColor:CV('--a1'),borderWidth:1.2,borderDash:[5,3],pointRadius:0}]},options:baseOpts('Part','X̄')});
+  destroyChart('r');
+  charts['r']=new Chart(document.getElementById('ch-r'),{type:'line',data:{labels:lbl,datasets:[...ops.map((op,i)=>({label:'Op '+op,data:parts.map(p=>cellRanges[op+'_'+p]),borderColor:C[i],borderWidth:1.6,pointRadius:3,tension:.2})),{label:'UCL(R)',data:Array(nPart).fill(UCL_R),borderColor:CV('--red'),borderWidth:1.2,borderDash:[5,3],pointRadius:0},{label:'R̄',data:Array(nPart).fill(Rbar),borderColor:CV('--green'),borderWidth:1.5,borderDash:[4,3],pointRadius:0}]},options:baseOpts('Part','Range')});
+  destroyChart('bypart');
+  charts['bypart']=new Chart(document.getElementById('ch-bypart'),{type:'scatter',data:{datasets:ops.map((op,i)=>({label:'Op '+op,data:parts.flatMap(p=>data[op][p].map(v=>({x:p,y:v}))),backgroundColor:C[i]+'aa',borderColor:C[i],pointRadius:4}))},options:{...baseOpts('Part','Measurement'),scales:{...baseOpts().scales,x:{type:'linear',ticks:{stepSize:1,color:CV('--text2')},grid:{color:CV('--border')+'55'}}}}});
+  destroyChart('opbox');
+  const opS=ops.map(op=>{const vs=parts.flatMap(p=>data[op][p]);return Math.max(...vs)-Math.min(...vs);});
+  charts['opbox']=new Chart(document.getElementById('ch-opbox'),{type:'bar',data:{labels:ops.map(o=>'Op '+o),datasets:[{label:'Measurement Range',data:opS,backgroundColor:C.slice(0,nOp).map(c=>c+'55'),borderColor:C.slice(0,nOp),borderWidth:1.5}]},options:baseOpts('Operator','Range')});
+  destroyChart('interact');
+  charts['interact']=new Chart(document.getElementById('ch-interact'),{type:'line',data:{labels:lbl,datasets:ops.map((op,i)=>({label:'Op '+op,data:parts.map(p=>cellMeans[op+'_'+p]),borderColor:C[i],borderWidth:1.8,pointRadius:3.5,tension:.3}))},options:baseOpts('Part','Mean')});
+  destroyChart('run');
+  const rd=[];ops.forEach(op=>parts.forEach(p=>data[op][p].forEach(v=>rd.push(v))));
+  charts['run']=new Chart(document.getElementById('ch-run'),{type:'line',data:{labels:rd.map((_,i)=>i+1),datasets:[{label:'Measurements',data:rd,borderColor:CV('--a1'),borderWidth:1.2,pointRadius:1.5,tension:.1},{label:'Grand Mean',data:Array(rd.length).fill(d.grandMean),borderColor:CV('--green'),borderDash:[5,3],pointRadius:0,borderWidth:1.2}]},options:baseOpts('Order','Value')});
+}
+
+function renderVC(d){
+  const{VC:v,KPIs:k,SV}=d;
+  showResults('grr-var-empty','grr-var-content');
+  const C=[CV('--a4'),CV('--a5'),CV('--a3'),CV('--a2')];
+  document.getElementById('var-kpi').innerHTML=[
+    {l:'%GRR',v:k.pctGRR.toFixed(2)+'%',cls:'kpi-a4',vc:k.pctGRR<10?'kpi-v-green':k.pctGRR<30?'kpi-v-a3':'kpi-v-red'},
+    {l:'%EV (Repeatability)',v:k.pctEV.toFixed(2)+'%',cls:'kpi-a5',vc:'kpi-v-a5'},
+    {l:'%AV (Reproducibility)',v:k.pctAV.toFixed(2)+'%',cls:'kpi-a3',vc:'kpi-v-a3'},
+    {l:'%PV (Part Variation)',v:k.pctPV.toFixed(2)+'%',cls:'kpi-a2',vc:'kpi-v-a2'},
+  ].map(c=>`<div class="kpi ${c.cls}"><div class="kpi-l">${c.l}</div><div class="kpi-v ${c.vc}">${c.v}</div></div>`).join('');
+  const segs=[{l:'EV',p:k.pctEV,c:C[0]},{l:'AV',p:k.pctAV,c:C[1]},{l:'PV',p:k.pctPV,c:C[2]}];
+  document.getElementById('vc-bar-wrap').innerHTML=`<div class="vc-bar">${segs.map(s=>`<div class="vc-seg" style="width:${s.p}%;background:${s.c}">${s.p>5?s.l:''}</div>`).join('')}</div>`;
+  document.getElementById('vc-legend').innerHTML=`<div class="vc-legend">${segs.map(s=>`<div class="vc-item"><div class="vc-dot" style="background:${s.c}"></div>${s.l}: ${s.p.toFixed(1)}%</div>`).join('')}</div>`;
+  destroyChart('vc-bar');
+  charts['vc-bar']=new Chart(document.getElementById('ch-vc-bar'),{type:'bar',data:{labels:['GRR','EV','AV','PV'],datasets:[{data:[k.pctGRR,k.pctEV,k.pctAV,k.pctPV],backgroundColor:C,borderColor:C,borderWidth:1}]},options:{...baseOpts('Component','%'),plugins:{...baseOpts().plugins,legend:{display:false}}}});
+  destroyChart('vc-pie');
+  charts['vc-pie']=new Chart(document.getElementById('ch-vc-pie'),{type:'pie',data:{labels:['EV','AV','PV'],datasets:[{data:[v.sigmaE2+v.sigmaOP2*.5,v.sigmaO2+v.sigmaOP2*.5,v.sigmaP2],backgroundColor:C}]},options:{responsive:true,animation:{duration:400},plugins:{legend:{labels:{color:CV('--text2'),font:{size:11}}}}}});
+  document.getElementById('vc-table').innerHTML=`<tr><th>Component</th><th>Variance σ²</th><th>Std Dev σ</th><th>Study Var (${SV}σ)</th><th>%Study</th><th>%Contribution</th></tr>`+[['Total GRR',v.sigmaGRR2,v.GRR,k.pctGRR],['EV (Repeat.)',v.sigmaE2,v.EV,k.pctEV],['AV (Reprod.)',v.sigmaO2+v.sigmaOP2,v.AV,k.pctAV],['PV (Part)',v.sigmaP2,v.PV,k.pctPV],['TV (Total)',v.sigmaTotal2,v.TV,100]].map(([s,s2,sg,p])=>`<tr><td class="td-hl">${s}</td><td class="td-num">${s2.toFixed(6)}</td><td class="td-num">${sg.toFixed(5)}</td><td class="td-num">${(SV*sg).toFixed(5)}</td><td class="${s.includes('GRR')?(p<10?'td-ok':p<30?'td-warn':'td-bad'):'td-num'}">${p.toFixed(2)}%</td><td class="td-num">${(s2/v.sigmaTotal2*100).toFixed(2)}%</td></tr>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+//  BIAS & LINEARITY
+// ═══════════════════════════════════════════════════════
+function runBias(){
+  if(!guardAction())return;
+  const rows=parseDelimited(document.getElementById('bias-input').value);
+  if(rows.length<2){notify('Need at least 2 reference values.','err');return;}
+  biasData=rows.map(r=>({ref:parseFloat(r[0]),meas:r.slice(1).map(Number).filter(v=>!isNaN(v))})).filter(r=>!isNaN(r.ref)&&r.meas.length>0);
+  if(biasData.length<2){notify('Could not parse data.','err');return;}
+  redrawBiasCharts();notify('Bias & Linearity complete.','ok');
+}
+function redrawBiasCharts(){
+  if(!biasData)return;
+  const d=biasData,allB=d.flatMap(r=>r.meas.map(m=>m-r.ref)),ov=mean(allB),ovSD=stdev(allB),n=allB.length;
+  const tStat=ov/(ovSD/Math.sqrt(n)),pVal=Math.min(1,2*Math.exp(-0.717*Math.abs(tStat)-0.416*tStat*tStat));
+  const USL=parseFloat(document.getElementById('f-usl').value),LSL=parseFloat(document.getElementById('f-lsl').value);
+  const tol=(!isNaN(USL)&&!isNaN(LSL))?(USL-LSL):null;
+  const bPct=tol?(Math.abs(ov)/tol*100):null;
+  showResults('bias-empty','bias-content');showResults('linearity-empty','linearity-content');
+  document.getElementById('bias-kpi').innerHTML=[
+    {l:'Bias (Mean)',v:ov.toFixed(5),s:'Avg error',cls:pVal>0.05?'kpi-a2':'kpi-red',vc:pVal>0.05?'kpi-v-green':'kpi-v-red'},
+    {l:'Std Dev',v:ovSD.toFixed(5),s:'Bias variation',cls:'kpi-a1',vc:'kpi-v-a1'},
+    {l:'t-statistic',v:tStat.toFixed(4),s:'H₀: Bias=0',cls:'kpi-a3',vc:'kpi-v-a3'},
+    {l:'%Bias/Tol',v:bPct?bPct.toFixed(2)+'%':'N/A',s:'vs tolerance',cls:bPct&&bPct<10?'kpi-a2':'kpi-a3',vc:'kpi-v-a3'},
+  ].map(c=>`<div class="kpi ${c.cls}"><div class="kpi-l">${c.l}</div><div class="kpi-v ${c.vc}">${c.v}</div><div class="kpi-s">${c.s}</div></div>`).join('');
+  document.getElementById('bias-table').innerHTML=`<tr><th>Reference</th><th>Count</th><th>Mean Meas.</th><th>Bias</th><th>%Bias</th><th>Std Dev</th></tr>`+d.map(r=>{const bv=mean(r.meas)-r.ref;return`<tr><td class="td-hl">${r.ref.toFixed(4)}</td><td>${r.meas.length}</td><td class="td-num">${mean(r.meas).toFixed(4)}</td><td class="${Math.abs(bv)>0.05?'td-warn':'td-ok'}">${bv.toFixed(5)}</td><td class="td-num">${tol?(Math.abs(bv)/tol*100).toFixed(2)+'%':'—'}</td><td class="td-num">${r.meas.length>1?stdev(r.meas).toFixed(5):'—'}</td></tr>`;}).join('');
+  document.getElementById('bias-verdict').innerHTML=`<span class="result-badge ${pVal>0.05?'rb-pass':'rb-fail'}">Bias ${pVal>0.05?'NOT significant':'SIGNIFICANT'} (p=${pVal.toFixed(4)})</span>`;
+  const bins=10,bMin=Math.min(...allB),bMax=Math.max(...allB),bw=(bMax-bMin)/bins||0.001;
+  const bArr=Array.from({length:bins},(_,i)=>({f:bMin+i*bw,t:bMin+(i+1)*bw,c:0}));
+  allB.forEach(v=>{const i=Math.min(Math.floor((v-bMin)/bw),bins-1);if(i>=0)bArr[i].c++;});
+  destroyChart('bias-hist');charts['bias-hist']=new Chart(document.getElementById('ch-bias-hist'),{type:'bar',data:{labels:bArr.map(b=>((b.f+b.t)/2).toFixed(4)),datasets:[{data:bArr.map(b=>b.c),backgroundColor:CV('--a1')+'88',borderColor:CV('--a1'),borderWidth:1}]},options:{...baseOpts('Bias','Freq'),plugins:{...baseOpts().plugins,legend:{display:false}}}});
+  destroyChart('bias-run');charts['bias-run']=new Chart(document.getElementById('ch-bias-run'),{type:'line',data:{labels:allB.map((_,i)=>i+1),datasets:[{label:'Bias',data:allB,borderColor:CV('--a1'),pointRadius:2.5,borderWidth:1.5,tension:.2},{label:'Mean',data:Array(n).fill(ov),borderColor:CV('--a3'),borderDash:[5,3],pointRadius:0,borderWidth:1.5},{label:'Zero',data:Array(n).fill(0),borderColor:CV('--green'),borderDash:[3,3],pointRadius:0,borderWidth:1}]},options:baseOpts('Order','Bias')});
+  const refs=d.map(r=>r.ref),bByR=d.map(r=>mean(r.meas)-r.ref),xm=mean(refs),ym=mean(bByR);
+  const b1=refs.reduce((a,x,i)=>a+(x-xm)*(bByR[i]-ym),0)/refs.reduce((a,x)=>a+(x-xm)**2,0),b0=ym-b1*xm;
+  const r2=1-(bByR.reduce((a,v,i)=>a+(v-(b0+b1*refs[i]))**2,0)/bByR.reduce((a,v)=>a+(v-ym)**2,0));
+  document.getElementById('linearity-kpi').innerHTML=[
+    {l:'Slope b₁',v:b1.toFixed(6),cls:'kpi-a1',vc:'kpi-v-a1',s:'Bias change rate'},
+    {l:'Intercept b₀',v:b0.toFixed(6),cls:'kpi-a3',vc:'kpi-v-a3',s:'Bias at zero ref'},
+    {l:'R²',v:r2.toFixed(5),cls:r2>0.5?'kpi-red':'kpi-a2',vc:r2>0.5?'kpi-v-red':'kpi-v-green',s:'Fit quality'},
+    {l:'%Linearity',v:tol?((b1*(Math.max(...refs)-Math.min(...refs)))/tol*100).toFixed(2)+'%':'N/A',cls:'kpi-a5',vc:'kpi-v-a5',s:'vs tolerance'},
+  ].map(c=>`<div class="kpi ${c.cls}"><div class="kpi-l">${c.l}</div><div class="kpi-v ${c.vc}">${c.v}</div><div class="kpi-s">${c.s}</div></div>`).join('');
+  document.getElementById('linearity-table').innerHTML=`<tr><th>Reference</th><th>Bias</th><th>Fitted</th><th>Residual</th></tr>`+d.map((r,i)=>`<tr><td class="td-hl">${r.ref.toFixed(4)}</td><td class="td-num">${bByR[i].toFixed(5)}</td><td class="td-num">${(b0+b1*r.ref).toFixed(5)}</td><td class="td-num">${(bByR[i]-(b0+b1*r.ref)).toFixed(5)}</td></tr>`).join('');
+  document.getElementById('linearity-verdict').innerHTML=`<span class="result-badge ${r2<0.2?'rb-pass':'rb-warn'}">R²=${r2.toFixed(4)} — ${r2<0.2?'No significant linearity':'Linearity present'}</span>`;
+  const xR=[Math.min(...refs),Math.max(...refs)];
+  destroyChart('linearity');charts['linearity']=new Chart(document.getElementById('ch-linearity'),{type:'scatter',data:{datasets:[{label:'Bias',data:refs.map((x,i)=>({x,y:bByR[i]})),backgroundColor:CV('--a1')+'cc',borderColor:CV('--a1'),pointRadius:5},{label:'Regression',type:'line',data:xR.map(x=>({x,y:b0+b1*x})),borderColor:CV('--a3'),borderWidth:1.8,pointRadius:0},{label:'Zero',type:'line',data:xR.map(x=>({x,y:0})),borderColor:CV('--green'),borderWidth:1,borderDash:[5,3],pointRadius:0}]},options:{...baseOpts('Reference','Bias'),scales:{...baseOpts().scales,x:{type:'linear',ticks:{color:CV('--text2')},grid:{color:CV('--border')+'55'}}}}});
+}
+
+// ═══════════════════════════════════════════════════════
+//  STABILITY
+// ═══════════════════════════════════════════════════════
+function runStability(){
+  if(!guardAction())return;
+  const m=parseDelimited(document.getElementById('stab-input').value).map(r=>r.map(Number).filter(v=>!isNaN(v))).filter(r=>r.length>0);
+  if(m.length<4){notify('Need at least 4 time periods.','err');return;}
+  stabData=m;redrawStabCharts();notify('Stability analysis complete.','ok');
+}
+function redrawStabCharts(){
+  if(!stabData)return;
+  const m=stabData,n=m[0].length,D4v=D4[n]||2.114,d2v=d2[n]||1.128;
+  const xbars=m.map(r=>mean(r)),ranges=m.map(r=>Math.max(...r)-Math.min(...r));
+  const xdbar=mean(xbars),rbar=mean(ranges),UCL_X=xdbar+A2[n]*rbar,LCL_X=xdbar-A2[n]*rbar,UCL_R=D4v*rbar;
+  const allV=m.flat(),ooc_x=xbars.filter(v=>v>UCL_X||v<LCL_X).length,ooc_r=ranges.filter(v=>v>UCL_R).length;
+  showResults('stab-empty','stab-content');
+  document.getElementById('stab-kpi').innerHTML=[
+    {l:'Grand Mean X̿',v:xdbar.toFixed(5),cls:'kpi-a1',vc:'kpi-v-a1',s:`${m.length} periods`},
+    {l:'Avg Range R̄',v:rbar.toFixed(5),cls:'kpi-a2',vc:'kpi-v-a2',s:`n=${n}/period`},
+    {l:'σ̂ Within',v:(rbar/d2v).toFixed(5),cls:'kpi-a3',vc:'kpi-v-a3',s:'R̄/d₂'},
+    {l:'OOC Points',v:`${ooc_x+ooc_r}`,cls:ooc_x+ooc_r>0?'kpi-red':'kpi-a2',vc:ooc_x+ooc_r>0?'kpi-v-red':'kpi-v-green',s:'X̄ + R combined'},
+  ].map(c=>`<div class="kpi ${c.cls}"><div class="kpi-l">${c.l}</div><div class="kpi-v ${c.vc}">${c.v}</div><div class="kpi-s">${c.s}</div></div>`).join('');
+  const lbl=m.map((_,i)=>'T'+(i+1));
+  destroyChart('stab-xbar');
+  charts['stab-xbar']=new Chart(document.getElementById('ch-stab-xbar'),{type:'line',data:{labels:lbl,datasets:[{label:'UCL',data:Array(m.length).fill(UCL_X),borderColor:CV('--red'),borderDash:[5,3],borderWidth:1.2,pointRadius:0},{label:'X̿',data:Array(m.length).fill(xdbar),borderColor:CV('--green'),borderDash:[4,3],borderWidth:1.5,pointRadius:0},{label:'LCL',data:Array(m.length).fill(LCL_X),borderColor:CV('--a1'),borderDash:[5,3],borderWidth:1.2,pointRadius:0},{label:'X̄',data:xbars,borderColor:CV('--a3'),backgroundColor:CV('--a3')+'22',borderWidth:1.8,pointRadius:xbars.map(v=>v>UCL_X||v<LCL_X?6:3),pointBackgroundColor:xbars.map(v=>v>UCL_X||v<LCL_X?CV('--red'):CV('--a3')),tension:.2}]},options:baseOpts('Period','X̄')});
+  destroyChart('stab-r');
+  charts['stab-r']=new Chart(document.getElementById('ch-stab-r'),{type:'line',data:{labels:lbl,datasets:[{label:'UCL(R)',data:Array(m.length).fill(UCL_R),borderColor:CV('--red'),borderDash:[5,3],borderWidth:1.2,pointRadius:0},{label:'R̄',data:Array(m.length).fill(rbar),borderColor:CV('--green'),borderDash:[4,3],borderWidth:1.5,pointRadius:0},{label:'R',data:ranges,borderColor:CV('--a5'),backgroundColor:CV('--a5')+'22',borderWidth:1.8,pointRadius:ranges.map(v=>v>UCL_R?6:3),pointBackgroundColor:ranges.map(v=>v>UCL_R?CV('--red'):CV('--a5')),tension:.2}]},options:baseOpts('Period','Range')});
+  destroyChart('stab-run');
+  charts['stab-run']=new Chart(document.getElementById('ch-stab-run'),{type:'line',data:{labels:allV.map((_,i)=>i+1),datasets:[{label:'Measurements',data:allV,borderColor:CV('--a2'),pointRadius:1.5,borderWidth:1.2,tension:.1},{label:'Grand Mean',data:Array(allV.length).fill(xdbar),borderColor:CV('--a3'),borderDash:[5,3],pointRadius:0,borderWidth:1.2}]},options:baseOpts('Order','Value')});
+  document.getElementById('stab-table').innerHTML=`<tr><th>Period</th><th>X̄</th><th>Range</th><th>X̄ Status</th><th>R Status</th></tr>`+m.map((r,i)=>`<tr><td class="td-hl">T${i+1}</td><td class="td-num">${xbars[i].toFixed(4)}</td><td class="td-num">${ranges[i].toFixed(4)}</td><td class="${xbars[i]>UCL_X||xbars[i]<LCL_X?'td-bad':'td-ok'}">${xbars[i]>UCL_X||xbars[i]<LCL_X?'OOC':'In'}</td><td class="${ranges[i]>UCL_R?'td-bad':'td-ok'}">${ranges[i]>UCL_R?'OOC':'In'}</td></tr>`).join('');
+  document.getElementById('stab-verdict').innerHTML=`<span class="result-badge ${ooc_x+ooc_r===0?'rb-pass':ooc_x+ooc_r<=2?'rb-warn':'rb-fail'}">${ooc_x+ooc_r===0?'✓ STABLE':'⚠ '+ooc_x+ooc_r+' OOC points detected'}</span>`;
+}
+
+// ═══════════════════════════════════════════════════════
+//  ATTRIBUTE MSA
+// ═══════════════════════════════════════════════════════
+function runAttribute(){
+  if(!guardAction())return;
+  const rows=parseDelimited(document.getElementById('attr-input').value);
+  if(rows.length<5){notify('Need at least 5 parts.','err');return;}
+  const norm=v=>v.toUpperCase().trim()==='P'||v==='1'?1:0;
+  const parts=rows.map(r=>({id:r[0],ref:norm(r[1]),readings:r.slice(2).map(norm)}));
+  const nParts=parts.length,nR=parts[0].readings.length,nOps=Math.floor(nR/2);
+  const opData=Array.from({length:nOps},(_,oi)=>parts.map(p=>p.readings.slice(oi*2,(oi+1)*2)));
+  const opNames=Array.from({length:nOps},(_,i)=>String.fromCharCode(65+i));
+  attrData={parts,opData,opNames,nOps,nParts};
+  redrawAttrCharts();notify('Attribute MSA complete.','ok');
+}
+function kappa(r1,r2){const n=r1.length,pO=r1.filter((v,i)=>v===r2[i]).length/n,p1=(r1.filter(v=>v===1).length/n)*(r2.filter(v=>v===1).length/n),p0=(r1.filter(v=>v===0).length/n)*(r2.filter(v=>v===0).length/n),pE=p1+p0;return pE===1?1:(pO-pE)/(1-pE);}
+function redrawAttrCharts(){
+  if(!attrData)return;
+  const{parts,opData,opNames,nOps,nParts}=attrData;
+  const refs=parts.map(p=>p.ref);
+  const kW=opData.map(od=>kappa(od.map(p=>p[0]),od.map(p=>p[1])));
+  const kR=opData.map(od=>kappa(od.map(p=>p[0]+p[1]>=1?1:0),refs));
+  const agR=opData.map(od=>od.map(p=>p[0]+p[1]>=1?1:0).filter((v,i)=>v===refs[i]).length/nParts*100);
+  const agI=opData.map(od=>od.map(p=>p[0]===p[1]?1:0).filter(v=>v===1).length/nParts*100);
+  const allAgree=parts.filter((p,pi)=>opData.every(od=>((od[pi][0]+od[pi][1]>=1?1:0)===p.ref))).length/nParts*100;
+  const ovK=mean(kR);
+  showResults('attr-empty','attr-content');
+  document.getElementById('attr-kpi').innerHTML=[
+    {l:'Overall κ',v:ovK.toFixed(4),s:ovK>=0.9?'Excellent':ovK>=0.7?'Acceptable':'Poor',cls:ovK>=0.9?'kpi-a2':ovK>=0.7?'kpi-a3':'kpi-red',vc:ovK>=0.9?'kpi-v-green':ovK>=0.7?'kpi-v-a3':'kpi-v-red'},
+    {l:'%All Agree w/ Ref',v:allAgree.toFixed(1)+'%',s:'All ops match ref',cls:allAgree>=90?'kpi-a2':'kpi-a3',vc:allAgree>=90?'kpi-v-green':'kpi-v-a3'},
+    {l:'Operators',v:nOps,s:'in study',cls:'kpi-a1',vc:'kpi-v-a1'},
+    {l:'Parts',v:nParts,s:'evaluated',cls:'kpi-a5',vc:'kpi-v-a5'},
+  ].map(c=>`<div class="kpi ${c.cls}"><div class="kpi-l">${c.l}</div><div class="kpi-v ${c.vc}">${c.v}</div><div class="kpi-s">${c.s}</div></div>`).join('');
+  document.getElementById('attr-kappa-table').innerHTML=`<tr><th>Operator</th><th>κ Within</th><th>κ vs Reference</th><th>%Agree (Repeat.)</th><th>%Agree (vs Ref)</th><th>Status</th></tr>`+opNames.map((op,i)=>`<tr><td class="td-hl">${op}</td><td class="${kW[i]>=0.9?'td-ok':kW[i]>=0.7?'td-warn':'td-bad'}">${kW[i].toFixed(4)}</td><td class="${kR[i]>=0.9?'td-ok':kR[i]>=0.7?'td-warn':'td-bad'}">${kR[i].toFixed(4)}</td><td class="td-num">${agI[i].toFixed(1)}%</td><td class="td-num">${agR[i].toFixed(1)}%</td><td class="${kR[i]>=0.75?'td-ok':'td-bad'}">${kR[i]>=0.75?'✓ OK':'✗ Poor'}</td></tr>`).join('');
+  let ah=`<tr><th>Part</th><th>Reference</th>${opNames.map(o=>`<th>Op ${o} R1</th><th>Op ${o} R2</th>`).join('')}<th>All Agree?</th></tr>`;
+  parts.forEach((p,pi)=>{const am=opData.flatMap(od=>[od[pi][0],od[pi][1]]).every(v=>v===p.ref);ah+=`<tr><td class="td-hl">${p.id}</td><td class="${p.ref?'td-ok':'td-bad'}">${p.ref?'P':'F'}</td>${opData.flatMap(od=>[od[pi][0],od[pi][1]]).map(v=>`<td class="${v===p.ref?'':'td-bad'}" style="${v===p.ref?'background:rgba(52,211,153,.08)':''}">${v?'P':'F'}</td>`).join('')}<td class="${am?'td-ok':'td-bad'}">${am?'✓':'✗'}</td></tr>`;});
+  document.getElementById('attr-agree-table').innerHTML=ah;
+  const C=[CV('--a1'),CV('--a2'),CV('--a3'),CV('--a4'),CV('--a5')];
+  destroyChart('attr-agree');charts['attr-agree']=new Chart(document.getElementById('ch-attr-agree'),{type:'bar',data:{labels:opNames.map(o=>'Op '+o),datasets:[{label:'%Agree w/Ref',data:agR,backgroundColor:CV('--a2')+'88',borderColor:CV('--a2'),borderWidth:1.5},{label:'%Within',data:agI,backgroundColor:CV('--a1')+'66',borderColor:CV('--a1'),borderWidth:1.5}]},options:baseOpts('Operator','%')});
+  destroyChart('attr-kappa');charts['attr-kappa']=new Chart(document.getElementById('ch-attr-kappa'),{type:'bar',data:{labels:opNames.map(o=>'Op '+o),datasets:[{label:'κ vs Ref',data:kR,backgroundColor:CV('--a3')+'88',borderColor:CV('--a3'),borderWidth:1.5},{label:'κ Within',data:kW,backgroundColor:CV('--a5')+'66',borderColor:CV('--a5'),borderWidth:1.5}]},options:{...baseOpts('Operator','κ'),scales:{...baseOpts().scales,y:{...baseOpts().scales.y,min:0,max:1}}}});
+  document.getElementById('attr-verdict').innerHTML=`<span class="result-badge ${ovK>=0.9?'rb-pass':ovK>=0.7?'rb-warn':'rb-fail'}">κ = ${ovK.toFixed(4)} — ${ovK>=0.9?'✓ Excellent':ovK>=0.7?'⚠ Acceptable':'✗ Poor'}</span>`;
+}
+
+// ═══════════════════════════════════════════════════════
+//  ROUTER & INIT
+// ═══════════════════════════════════════════════════════
+function runCurrentAnalysis(){
+  if(!guardAction())return;
+  const t=document.querySelector('.module-tab.active').textContent;
+  if(t.includes('R&R'))runGRR();
+  else if(t.includes('Bias'))runBias();
+  else if(t.includes('Stability'))runStability();
+  else if(t.includes('Attribute'))runAttribute();
+}
+</script>
+</body>
+</html>
