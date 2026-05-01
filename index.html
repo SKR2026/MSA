@@ -1824,16 +1824,25 @@ function executePrint(){
     if (el && el.style.display === 'none') { hiddenContents.push(el); el.style.display = ''; }
   });
 
-  // 4. Give browser a frame to render the DOM changes, then print and restore
+  // 4. Redraw all charts now that their containers are visible (canvases were zero-size when hidden)
+  if(grrData){ redrawGRRCharts(); }
+  if(biasData){ redrawBiasCharts(); }
+  if(stabData){ redrawStabCharts(); }
+  if(attrData){ redrawAttrCharts(); }
+
+  // 5. Resize any remaining charts and wait for Chart.js to fully re-render, then print and restore
   setTimeout(function() {
-    window.print();
-    // Restore everything after print dialog closes
-    hiddenModules.forEach(function(p) { p.classList.remove('active'); });
-    hiddenPanels.forEach(function(p) { p.classList.remove('active'); });
-    hiddenContents.forEach(function(el) { el.style.display = 'none'; });
-    Object.values(checks).forEach(function(cls) { body.classList.remove(cls); });
-    body.classList.remove('no-print-modules');
-  }, 150);
+    Object.values(charts).forEach(function(c) { try { c.resize(); } catch(e) {} });
+    setTimeout(function() {
+      window.print();
+      // Restore everything after print dialog closes
+      hiddenModules.forEach(function(p) { p.classList.remove('active'); });
+      hiddenPanels.forEach(function(p) { p.classList.remove('active'); });
+      hiddenContents.forEach(function(el) { el.style.display = 'none'; });
+      Object.values(checks).forEach(function(cls) { body.classList.remove(cls); });
+      body.classList.remove('no-print-modules');
+    }, 300);
+  }, 50);
 }
 
 // ═══════════════════════════════════════════════════════
