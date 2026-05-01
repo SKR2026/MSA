@@ -163,6 +163,14 @@
     } catch(e) { return { success: false, error: e.message }; }
   };
 
+  // ── ADMIN: Update license ──────────────────────────────
+  window.__msaUpdateLicense = async function(id, data) {
+    try {
+      await updateDoc(doc(db, 'licenses', id), { ...data, updatedAt: serverTimestamp() });
+      return { success: true };
+    } catch(e) { return { success: false, error: e.message }; }
+  };
+
   document.dispatchEvent(new Event('firebase-ready'));
 </script>
 
@@ -265,10 +273,11 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
 
 /* ── READ-ONLY BANNER ── */
 #readonly-banner {
-  display:none;position:fixed;top:0;left:0;right:0;z-index:500;
+  position:fixed;top:0;left:0;right:0;z-index:500;
   background:linear-gradient(90deg,#92400e,#b45309);
   color:#fef3c7;padding:8px 20px;font-size:12px;font-weight:600;
-  display:flex;align-items:center;justify-content:space-between;
+  align-items:center;justify-content:space-between;
+  display:none;
 }
 #readonly-banner.visible{display:flex}
 .ro-actions{display:flex;gap:10px;align-items:center}
@@ -1105,7 +1114,7 @@ canvas{max-width:100%}
 //  CONSTANTS & STATE
 // ═══════════════════════════════════════════════════════
 const D4={2:3.267,3:2.574,4:2.282,5:2.114};
-const d2={2:1.128,3:1.693,4:2.059,5:2.326};
+const d2={2:1.128,3:1.693,4:2.059,5:2.326,6:2.534,7:2.704,8:2.847,9:2.970,10:3.078,11:3.173,12:3.258,13:3.336,14:3.407,15:3.472};
 const A2={2:1.880,3:1.023,4:0.729,5:0.577};
 let charts={}, grrData=null, biasData=null, stabData=null, attrData=null;
 let isReadOnly=false, currentLicense=null;
@@ -1208,11 +1217,10 @@ function applyReadOnlyMode(data){
   banner.classList.add('visible');
   const exp=parseDate(data.expiryDate);
   document.getElementById('ro-expiry-date').textContent=exp?exp.toLocaleDateString('en-IN'):'Unknown';
-  // Disable all action buttons
+  // Disable specific action buttons only (not admin/save/export buttons)
   ['btn-analyse','btn-demo','btn-run-grr','btn-run-bias','btn-run-stab','btn-run-attr'].forEach(id=>{
     const el=document.getElementById(id);if(el){el.disabled=true;el.title='License expired — read-only mode';}
   });
-  document.querySelectorAll('.btn-green,.btn-accent').forEach(b=>{b.disabled=true;});
 }
 
 function logoutLicense(){
@@ -1230,7 +1238,7 @@ function showLicenseInfo(){
     <div><strong style="color:var(--a1)">Customer:</strong> ${currentLicense.customerName||'—'}</div>
     <div><strong style="color:var(--a1)">Email:</strong> ${currentLicense.email||'—'}</div>
     <div><strong style="color:var(--a1)">Issued:</strong> ${iss?iss.toLocaleDateString('en-IN'):'—'}</div>
-    <div><strong style="color:var(--a1)">Expires:</strong> ${exp.toLocaleDateString('en-IN')}</div>
+    <div><strong style="color:var(--a1)">Expires:</strong> ${exp ? exp.toLocaleDateString('en-IN') : '—'}</div>
     <div><strong style="color:var(--a1)">Features:</strong> ${(currentLicense.features||[]).join(', ')||'All'}</div>
     <div><strong style="color:var(--a1)">Status:</strong> <span class="${isReadOnly?'td-bad':'td-ok'}">${isReadOnly?'⚠ EXPIRED':'✓ Active'}</span></div>
     ${currentLicense.notes?`<div><strong style="color:var(--a1)">Notes:</strong> ${currentLicense.notes}</div>`:''}
@@ -1247,10 +1255,12 @@ document.addEventListener('DOMContentLoaded',()=>{
       try{
         const s=JSON.parse(sess);
         // Re-validate against Firestore on every load
+        let sessionChecked=false;
+        const tryRevalidate=(key)=>{if(sessionChecked)return;sessionChecked=true;revalidateSession(key);};
         if(window.__msaFirebaseReady){
-          revalidateSession(s.key);
+          tryRevalidate(s.key);
         } else {
-          document.addEventListener('firebase-ready',()=>revalidateSession(s.key),{once:true});
+          document.addEventListener('firebase-ready',()=>tryRevalidate(s.key),{once:true});
         }
       } catch(e){localStorage.removeItem(SESSION_KEY);}
     }
@@ -1980,11 +1990,10 @@ function filterLicenses(){
 }
 
 async function toggleLicenseStatus(id, current){
-  const res = await window.__msaUpdateUser ? await (async()=>{
-    // Use Firestore directly via window function not available, handle with notify
-    notify('Use Firebase console to revoke/restore licenses.','info');
-    return {success:false};
-  })() : {success:false};
+  if(!window.__msaUpdateLicense){ notify('Firebase not ready.','err'); return; }
+  const res = await window.__msaUpdateLicense(id, { isActive: !current });
+  if(res.success){ notify('License status updated.','ok'); loadLicenses(); }
+  else notify('Error: ' + res.error, 'err');
 }
 
 function runCurrentAnalysis(){
