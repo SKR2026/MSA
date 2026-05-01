@@ -12,8 +12,8 @@
 ═══════════════════════════════════════════ -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, doc, getDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getAuth, signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
   // ▼▼▼ REPLACE WITH YOUR FIREBASE CONFIG ▼▼▼
   const firebaseConfig = {
@@ -94,6 +94,67 @@
   // Expose to global scope
   window.__msaValidate = validateLicense;
   window.__msaFirebaseReady = true;
+
+  // ── ADMIN: List all users ──────────────────────────────
+  window.__msaListUsers = async function() {
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch(e) { return []; }
+  };
+
+  // ── ADMIN: Create user ─────────────────────────────────
+  window.__msaCreateUser = async function(userData) {
+    try {
+      const id = userData.email.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      await setDoc(doc(db, 'users', id), {
+        ...userData,
+        createdAt: serverTimestamp(),
+        isActive: true
+      });
+      return { success: true, id };
+    } catch(e) { return { success: false, error: e.message }; }
+  };
+
+  // ── ADMIN: Update user ─────────────────────────────────
+  window.__msaUpdateUser = async function(id, data) {
+    try {
+      await updateDoc(doc(db, 'users', id), { ...data, updatedAt: serverTimestamp() });
+      return { success: true };
+    } catch(e) { return { success: false, error: e.message }; }
+  };
+
+  // ── ADMIN: Delete user ─────────────────────────────────
+  window.__msaDeleteUser = async function(id) {
+    try {
+      await deleteDoc(doc(db, 'users', id));
+      return { success: true };
+    } catch(e) { return { success: false, error: e.message }; }
+  };
+
+  // ── ADMIN: List all licenses ───────────────────────────
+  window.__msaListLicenses = async function() {
+    try {
+      const snap = await getDocs(collection(db, 'licenses'));
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch(e) { return []; }
+  };
+
+  // ── ADMIN: Create license ──────────────────────────────
+  window.__msaCreateLicense = async function(licData) {
+    try {
+      const key = licData.key || ('MSA-' + Array.from({length:3},()=>Math.random().toString(36).substr(2,4).toUpperCase()).join('-'));
+      await setDoc(doc(db, 'licenses', key), {
+        ...licData,
+        key,
+        isActive: true,
+        activationCount: 0,
+        createdAt: serverTimestamp()
+      });
+      return { success: true, key };
+    } catch(e) { return { success: false, error: e.message }; }
+  };
+
   document.dispatchEvent(new Event('firebase-ready'));
 </script>
 
@@ -371,14 +432,72 @@ canvas{max-width:100%}
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:var(--surf)}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
-@media print{
-  #license-gate,#readonly-banner,.topbar,.sidebar,.module-tabs,.sub-tabs,.btn,.upload-zone,#tab-grr-data{display:none!important}
+/* ── ADMIN PANEL ── */
+.admin-overlay{position:fixed;inset:0;z-index:900;background:rgba(0,0,0,0.7);display:none;align-items:center;justify-content:center}
+.admin-overlay.open{display:flex}
+.admin-modal{background:var(--surf);border:1px solid var(--border2);border-radius:16px;width:860px;max-width:97vw;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 32px 80px rgba(0,0,0,.6)}
+.admin-hdr{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--border);flex-shrink:0}
+.admin-hdr h2{font-size:16px;font-weight:700;display:flex;align-items:center;gap:10px}
+.admin-tabs{display:flex;gap:0;padding:0 24px;background:var(--surf2);border-bottom:1px solid var(--border);flex-shrink:0}
+.admin-tab{padding:11px 18px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text2);font-family:'Outfit',sans-serif;font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;white-space:nowrap}
+.admin-tab:hover{color:var(--text)}
+.admin-tab.active{color:var(--a1);border-bottom-color:var(--a1)}
+.admin-body{overflow-y:auto;padding:20px 24px;flex:1}
+.admin-section{display:none}
+.admin-section.active{display:block}
+.admin-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.admin-form-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}
+.admin-fg{display:flex;flex-direction:column;gap:3px}
+.admin-label{font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.8px}
+.admin-input{background:var(--surf3);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-family:'Outfit',sans-serif;font-size:12px;width:100%}
+.admin-input:focus{outline:none;border-color:var(--a1)}
+.admin-input::placeholder{color:var(--text3)}
+.user-card{background:var(--surf2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.user-card-info{flex:1;min-width:0}
+.user-card-name{font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px}
+.user-card-meta{font-size:11px;color:var(--text3)}
+.user-card-actions{display:flex;gap:6px;flex-shrink:0}
+.user-badge{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}
+.badge-active{background:rgba(52,211,153,.15);color:var(--green);border:1px solid rgba(52,211,153,.3)}
+.badge-inactive{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.25)}
+.badge-admin{background:rgba(167,139,250,.15);color:var(--a5);border:1px solid rgba(167,139,250,.3)}
+.lic-card{background:var(--surf2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.lic-key{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--a1);font-weight:600}
+.lic-meta{font-size:10px;color:var(--text3);margin-top:2px}
+.admin-divider{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin:18px 0 12px;display:flex;align-items:center;gap:8px}
+.admin-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.gen-key-row{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+.gen-key-out{flex:1;font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--a1);background:var(--surf3);border:1px solid var(--border);border-radius:6px;padding:8px 12px;letter-spacing:2px}
+
+/* ── SAVE STUDY MODAL ── */
+.save-overlay{position:fixed;inset:0;z-index:900;background:rgba(0,0,0,0.7);display:none;align-items:center;justify-content:center}
+.save-overlay.open{display:flex}
+.save-modal{background:var(--surf);border:1px solid var(--border2);border-radius:16px;width:520px;max-width:95vw;box-shadow:0 32px 80px rgba(0,0,0,.6)}
+.save-hdr{padding:20px 24px;border-bottom:1px solid var(--border)}
+.save-hdr h2{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
+.save-body{padding:20px 24px}
+.save-opt{display:flex;align-items:center;gap:12px;padding:12px 16px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px;cursor:pointer;transition:all .15s;background:var(--surf2)}
+.save-opt:hover{border-color:var(--a1);background:rgba(79,156,249,.06)}
+.save-opt.selected{border-color:var(--a1);background:rgba(79,156,249,.1)}
+.save-icon{width:38px;height:38px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.save-opt-info h4{font-size:13px;font-weight:600;margin-bottom:2px}
+.save-opt-info p{font-size:11px;color:var(--text3)}
+.print-preview-section{background:var(--surf2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px}
+.print-check-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.print-check{display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer}
+.print-check input[type=checkbox]{width:14px;height:14px;accent-color:var(--a1)}
+
+@media print {
+  #license-gate,#readonly-banner,.topbar,.sidebar,.module-tabs,.sub-tabs,.btn,.upload-zone,
+  .admin-overlay,.save-overlay,.notif,#admin-fab{display:none!important}
   .layout{display:block}.main{overflow:visible;height:auto}
   .module-panel,.sub-panel{display:block!important}
   body{background:white;color:black}
   .card,.chart-wrap,.kpi{background:white;border:1px solid #ccc;break-inside:avoid}
-  @page{size:A3 landscape;margin:10mm}
+  .print-header{display:block!important}
+  @page{size:A3 landscape;margin:12mm}
 }
+.print-header{display:none;margin-bottom:16px;border-bottom:2px solid #ccc;padding-bottom:12px}
 </style>
 </head>
 <body>
@@ -468,7 +587,9 @@ canvas{max-width:100%}
     <button class="btn btn-sm" onclick="loadGRRDemo()" id="btn-demo">⚡ Demo</button>
     <button class="btn btn-sm btn-red" onclick="clearAll()">✕ Clear</button>
     <button class="btn btn-sm btn-green" onclick="runCurrentAnalysis()" id="btn-analyse">▶ Analyse</button>
-    <button class="btn btn-sm btn-accent" onclick="window.print()">⎙ Print</button>
+    <button class="btn btn-sm" onclick="openSaveModal()" title="Save Study as JSON">💾 Save</button>
+    <button class="btn btn-sm btn-accent" onclick="openPrintDialog()">⎙ Print</button>
+    <button class="btn btn-sm" id="btn-admin" onclick="openAdminPanel()" title="Admin Panel" style="display:none;background:linear-gradient(135deg,var(--a5),var(--a4));color:#fff;border-color:var(--a5)">🛡 Admin</button>
     <button class="btn btn-sm" onclick="logoutLicense()" title="Change License Key" style="padding:4px 8px">🔓</button>
   </div>
 </header>
@@ -757,6 +878,194 @@ canvas{max-width:100%}
 
 <div class="notif hide" id="notif"></div>
 
+<!-- ═══════════════════ PRINT HEADER (shown only on print) ═══════════════════ -->
+<div class="print-header" id="print-header">
+  <table style="width:100%;border-collapse:collapse;font-size:11px">
+    <tr>
+      <td style="font-size:20px;font-weight:800;color:#1a2040;padding-bottom:4px" colspan="4">MSA Suite — Measurement System Analysis Report</td>
+    </tr>
+    <tr style="color:#444;border-top:1px solid #ccc">
+      <td style="padding:4px 8px 0 0"><strong>Company:</strong> <span id="ph-company"></span></td>
+      <td style="padding:4px 8px 0"><strong>Customer:</strong> <span id="ph-customer"></span></td>
+      <td style="padding:4px 8px 0"><strong>Study No:</strong> <span id="ph-studyno"></span></td>
+      <td style="padding:4px 0 0"><strong>Date:</strong> <span id="ph-date"></span></td>
+    </tr>
+    <tr style="color:#444">
+      <td style="padding:2px 8px 0 0"><strong>Part:</strong> <span id="ph-part"></span></td>
+      <td style="padding:2px 8px 0"><strong>Char:</strong> <span id="ph-char"></span></td>
+      <td style="padding:2px 8px 0"><strong>Gauge:</strong> <span id="ph-gauge"></span></td>
+      <td style="padding:2px 0 0"><strong>Prepared By:</strong> <span id="ph-prepby"></span></td>
+    </tr>
+  </table>
+</div>
+
+<!-- ═══════════════════ SAVE STUDY MODAL ═══════════════════ -->
+<div class="save-overlay" id="save-overlay" onclick="if(event.target===this)closeSaveModal()">
+  <div class="save-modal">
+    <div class="save-hdr">
+      <h2>💾 Save / Export Study</h2>
+    </div>
+    <div class="save-body">
+      <div class="save-opt" id="opt-json" onclick="selectSaveOpt('json')">
+        <div class="save-icon" style="background:rgba(79,156,249,.15)">📄</div>
+        <div class="save-opt-info">
+          <h4>Save as JSON</h4>
+          <p>Save complete study data and results — reload later to continue</p>
+        </div>
+      </div>
+      <div class="save-opt" id="opt-csv" onclick="selectSaveOpt('csv')">
+        <div class="save-icon" style="background:rgba(52,211,153,.15)">📊</div>
+        <div class="save-opt-info">
+          <h4>Export Data as CSV</h4>
+          <p>Export the current measurement data for use in other tools</p>
+        </div>
+      </div>
+      <div class="save-opt" id="opt-print" onclick="selectSaveOpt('print')">
+        <div class="save-icon" style="background:rgba(245,158,11,.15)">🖨️</div>
+        <div class="save-opt-info">
+          <h4>Print / Save as PDF</h4>
+          <p>Print the full study report or save as PDF via browser dialog</p>
+        </div>
+      </div>
+
+      <div id="print-options-panel" style="display:none;margin-top:8px">
+        <div class="print-preview-section">
+          <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">Include in Print</div>
+          <div class="print-check-grid">
+            <label class="print-check"><input type="checkbox" id="pc-header" checked> Study Header</label>
+            <label class="print-check"><input type="checkbox" id="pc-kpi" checked> KPI Summary</label>
+            <label class="print-check"><input type="checkbox" id="pc-tables" checked> Data Tables</label>
+            <label class="print-check"><input type="checkbox" id="pc-charts" checked> Charts</label>
+            <label class="print-check"><input type="checkbox" id="pc-verdict" checked> Verdict / Decision</label>
+            <label class="print-check"><input type="checkbox" id="pc-all-modules"> All Analysis Modules</label>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:12px">Tip: In the print dialog, choose <em>Save as PDF</em> to create a digital copy.</div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn btn-green" style="flex:1" id="save-execute-btn" onclick="executeSave()">Download</button>
+        <button class="btn" style="flex:0 0 auto" onclick="closeSaveModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ ADMIN PANEL ═══════════════════ -->
+<div class="admin-overlay" id="admin-overlay" onclick="if(event.target===this)closeAdminPanel()">
+  <div class="admin-modal">
+    <div class="admin-hdr">
+      <h2>🛡 Admin Panel <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">— Manage Users &amp; Licenses</span></h2>
+      <button class="btn btn-sm btn-red" onclick="closeAdminPanel()">✕ Close</button>
+    </div>
+    <div class="admin-tabs">
+      <button class="admin-tab active" onclick="switchAdminTab('users',this)">👥 Users</button>
+      <button class="admin-tab" onclick="switchAdminTab('licenses',this)">🔑 Licenses</button>
+    </div>
+    <div class="admin-body">
+
+      <!-- USERS TAB -->
+      <div id="admin-users" class="admin-section active">
+        <div class="admin-divider">Create New User</div>
+        <div class="admin-form-grid">
+          <div class="admin-fg">
+            <span class="admin-label">Full Name *</span>
+            <input class="admin-input" id="nu-name" placeholder="e.g. Rahul Sharma">
+          </div>
+          <div class="admin-fg">
+            <span class="admin-label">Email *</span>
+            <input class="admin-input" id="nu-email" type="email" placeholder="user@company.com">
+          </div>
+          <div class="admin-fg">
+            <span class="admin-label">Role</span>
+            <select class="admin-input" id="nu-role">
+              <option value="user">User</option>
+              <option value="analyst">Analyst</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <div class="admin-fg">
+            <span class="admin-label">Department</span>
+            <input class="admin-input" id="nu-dept" placeholder="e.g. Quality, Production">
+          </div>
+          <div class="admin-fg">
+            <span class="admin-label">Phone</span>
+            <input class="admin-input" id="nu-phone" placeholder="+91 98765 43210">
+          </div>
+          <div class="admin-fg">
+            <span class="admin-label">Assign License Key</span>
+            <input class="admin-input" id="nu-lickey" placeholder="MSA-XXXX-XXXX-XXXX">
+          </div>
+        </div>
+        <div class="admin-fg" style="margin-bottom:14px">
+          <span class="admin-label">Notes</span>
+          <input class="admin-input" id="nu-notes" placeholder="Optional notes about this user">
+        </div>
+        <button class="btn btn-green" onclick="createUser()" style="margin-bottom:20px">+ Create User</button>
+
+        <div class="admin-divider">Existing Users</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <input class="admin-input" id="user-search" placeholder="🔍  Search by name or email..." oninput="filterUsers()" style="flex:1">
+          <button class="btn btn-sm" onclick="loadUsers()">↻ Refresh</button>
+        </div>
+        <div id="users-list">
+          <div style="text-align:center;color:var(--text3);padding:30px;font-size:12px">Click Refresh to load users from database.</div>
+        </div>
+      </div>
+
+      <!-- LICENSES TAB -->
+      <div id="admin-licenses" class="admin-section">
+        <div class="admin-divider">Generate New License</div>
+        <div class="admin-form-grid-3">
+          <div class="admin-fg">
+            <span class="admin-label">Company Name *</span>
+            <input class="admin-input" id="nl-company" placeholder="Company / Plant">
+          </div>
+          <div class="admin-fg">
+            <span class="admin-label">Customer Name</span>
+            <input class="admin-input" id="nl-customer" placeholder="Customer">
+          </div>
+          <div class="admin-fg">
+            <span class="admin-label">Email</span>
+            <input class="admin-input" id="nl-email" type="email" placeholder="contact@company.com">
+          </div>
+          <div class="admin-fg">
+            <span class="admin-label">Expiry Date *</span>
+            <input class="admin-input" id="nl-expiry" type="date">
+          </div>
+          <div class="admin-fg">
+            <span class="admin-label">Max Users</span>
+            <input class="admin-input" id="nl-maxusers" type="number" min="1" value="5" placeholder="5">
+          </div>
+          <div class="admin-fg">
+            <span class="admin-label">Custom Key (optional)</span>
+            <input class="admin-input" id="nl-customkey" placeholder="Auto-generated if blank" style="font-family:'JetBrains Mono',monospace;letter-spacing:1px">
+          </div>
+        </div>
+        <div class="admin-fg" style="margin-bottom:6px">
+          <span class="admin-label">Notes</span>
+          <input class="admin-input" id="nl-notes" placeholder="Optional license notes">
+        </div>
+        <div class="gen-key-row" style="margin-top:12px">
+          <button class="btn btn-green" onclick="createLicense()">🔑 Generate &amp; Save License</button>
+          <div class="gen-key-out" id="gen-key-result" style="display:none"></div>
+          <button class="btn btn-sm" id="copy-key-btn" onclick="copyGenKey()" style="display:none">📋 Copy</button>
+        </div>
+
+        <div class="admin-divider">All Licenses</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <input class="admin-input" id="lic-search" placeholder="🔍  Search by key or company..." oninput="filterLicenses()" style="flex:1">
+          <button class="btn btn-sm" onclick="loadLicenses()">↻ Refresh</button>
+        </div>
+        <div id="licenses-list">
+          <div style="text-align:center;color:var(--text3);padding:30px;font-size:12px">Click Refresh to load licenses from database.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════════ LICENSE INFO MODAL ═══════════════════ -->
 <div id="license-modal" style="display:none;position:fixed;inset:0;z-index:800;background:rgba(0,0,0,0.6);align-items:center;justify-content:center">
   <div style="background:var(--surf);border:1px solid var(--border2);border-radius:16px;padding:32px;width:400px;max-width:95vw;box-shadow:0 24px 60px rgba(0,0,0,0.5)">
@@ -855,6 +1164,10 @@ function unlockApp(readOnly,data){
     const exp=parseDate(data.expiryDate);
     const daysLeft=exp?Math.ceil((exp-new Date())/(1000*60*60*24)):null;
     document.getElementById('chip-expiry').textContent=exp?`Expires ${exp.toLocaleDateString('en-IN')} (${daysLeft}d)`:'—';
+    // Show admin button if role is admin
+    if(data.role==='admin' || data.isAdmin===true){
+      document.getElementById('btn-admin').style.display='inline-flex';
+    }
   }
 }
 
@@ -1331,8 +1644,292 @@ function redrawAttrCharts(){
 }
 
 // ═══════════════════════════════════════════════════════
-//  ROUTER & INIT
+//  SAVE / EXPORT / PRINT
 // ═══════════════════════════════════════════════════════
+let selectedSaveOpt = 'json';
+
+function openSaveModal() {
+  selectedSaveOpt = 'json';
+  document.querySelectorAll('.save-opt').forEach(o=>o.classList.remove('selected'));
+  document.getElementById('opt-json').classList.add('selected');
+  document.getElementById('print-options-panel').style.display='none';
+  document.getElementById('save-execute-btn').textContent='Download';
+  document.getElementById('save-overlay').classList.add('open');
+}
+function closeSaveModal(){ document.getElementById('save-overlay').classList.remove('open'); }
+
+function selectSaveOpt(type){
+  selectedSaveOpt=type;
+  document.querySelectorAll('.save-opt').forEach(o=>o.classList.remove('selected'));
+  document.getElementById('opt-'+type).classList.add('selected');
+  document.getElementById('print-options-panel').style.display = type==='print'?'block':'none';
+  document.getElementById('save-execute-btn').textContent = type==='print' ? '🖨️ Print' : 'Download';
+}
+
+function executeSave(){
+  if(selectedSaveOpt==='json') saveStudyJSON();
+  else if(selectedSaveOpt==='csv') exportCSV();
+  else if(selectedSaveOpt==='print') executePrint();
+  closeSaveModal();
+}
+
+function saveStudyJSON(){
+  const study = {
+    meta: {
+      company: document.getElementById('f-company').value,
+      customer: document.getElementById('f-customer').value,
+      date: document.getElementById('f-date').value,
+      studyNo: document.getElementById('f-studyno').value,
+      prepBy: document.getElementById('f-prepby').value,
+      partName: document.getElementById('f-partname').value,
+      partNo: document.getElementById('f-partno').value,
+      characteristic: document.getElementById('f-char').value,
+      gauge: document.getElementById('f-gauge').value,
+      gaugeNo: document.getElementById('f-gaugeno').value,
+      nominal: document.getElementById('f-nominal').value,
+      tolerance: document.getElementById('f-tol').value,
+      usl: document.getElementById('f-usl').value,
+      lsl: document.getElementById('f-lsl').value,
+      ops: document.getElementById('f-ops').value,
+      parts: document.getElementById('f-parts').value,
+      reps: document.getElementById('f-reps').value,
+      sv: document.getElementById('f-sv').value,
+    },
+    data: {
+      grr: document.getElementById('grr-input')?.value || '',
+      bias: document.getElementById('bias-input')?.value || '',
+      stability: document.getElementById('stab-input')?.value || '',
+      attribute: document.getElementById('attr-input')?.value || '',
+    },
+    savedAt: new Date().toISOString(),
+    version: '1.0'
+  };
+  const blob = new Blob([JSON.stringify(study, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const fname = (study.meta.studyNo||'MSA-Study') + '_' + (study.meta.date||new Date().toISOString().split('T')[0]) + '.json';
+  a.download = fname.replace(/[^a-z0-9_\-\.]/gi,'_');
+  a.click();
+  notify('Study saved as ' + a.download, 'ok');
+}
+
+function exportCSV(){
+  const activeTab = document.querySelector('.module-tab.active').textContent;
+  let csvContent = '', fname = 'msa_data.csv';
+  if(activeTab.includes('R&R')){
+    csvContent = document.getElementById('grr-input')?.value || '';
+    fname = 'grr_data.csv';
+  } else if(activeTab.includes('Bias')){
+    csvContent = document.getElementById('bias-input')?.value || '';
+    fname = 'bias_data.csv';
+  } else if(activeTab.includes('Stability')){
+    csvContent = document.getElementById('stab-input')?.value || '';
+    fname = 'stability_data.csv';
+  } else {
+    csvContent = document.getElementById('attr-input')?.value || '';
+    fname = 'attribute_data.csv';
+  }
+  if(!csvContent.trim()){ notify('No data to export in current module.','err'); return; }
+  const blob = new Blob([csvContent], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = fname;
+  a.click();
+  notify('CSV exported: ' + fname, 'ok');
+}
+
+function openPrintDialog(){
+  executePrint();
+}
+
+function executePrint(){
+  // Populate print header
+  document.getElementById('ph-company').textContent = document.getElementById('f-company').value || '—';
+  document.getElementById('ph-customer').textContent = document.getElementById('f-customer').value || '—';
+  document.getElementById('ph-studyno').textContent = document.getElementById('f-studyno').value || '—';
+  document.getElementById('ph-date').textContent = document.getElementById('f-date').value || '—';
+  document.getElementById('ph-part').textContent = (document.getElementById('f-partname').value || '—') + ' (' + (document.getElementById('f-partno').value || '') + ')';
+  document.getElementById('ph-char').textContent = document.getElementById('f-char').value || '—';
+  document.getElementById('ph-gauge').textContent = (document.getElementById('f-gauge').value || '—') + ' #' + (document.getElementById('f-gaugeno').value || '');
+  document.getElementById('ph-prepby').textContent = document.getElementById('f-prepby').value || '—';
+  window.print();
+}
+
+// ═══════════════════════════════════════════════════════
+//  ADMIN PANEL
+// ═══════════════════════════════════════════════════════
+let allUsersCache = [], allLicensesCache = [];
+
+function openAdminPanel(){
+  document.getElementById('admin-overlay').classList.add('open');
+  // Set default expiry to 1 year from now
+  const y = new Date(); y.setFullYear(y.getFullYear()+1);
+  document.getElementById('nl-expiry').value = y.toISOString().split('T')[0];
+}
+function closeAdminPanel(){ document.getElementById('admin-overlay').classList.remove('open'); }
+
+function switchAdminTab(tab, btn){
+  document.querySelectorAll('.admin-tab').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.admin-section').forEach(s=>s.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('admin-'+tab).classList.add('active');
+}
+
+// ── USER MANAGEMENT ──
+async function createUser(){
+  const name = document.getElementById('nu-name').value.trim();
+  const email = document.getElementById('nu-email').value.trim();
+  if(!name || !email){ notify('Name and Email are required.','err'); return; }
+  const userData = {
+    name, email,
+    role: document.getElementById('nu-role').value,
+    department: document.getElementById('nu-dept').value.trim(),
+    phone: document.getElementById('nu-phone').value.trim(),
+    licenseKey: document.getElementById('nu-lickey').value.trim(),
+    notes: document.getElementById('nu-notes').value.trim(),
+  };
+  notify('Creating user...','info');
+  if(!window.__msaCreateUser){ notify('Firebase not ready.','err'); return; }
+  const res = await window.__msaCreateUser(userData);
+  if(res.success){
+    notify('User created: ' + name, 'ok');
+    ['nu-name','nu-email','nu-dept','nu-phone','nu-lickey','nu-notes'].forEach(id=>{ document.getElementById(id).value=''; });
+    document.getElementById('nu-role').value='user';
+    loadUsers();
+  } else {
+    notify('Error: ' + res.error, 'err');
+  }
+}
+
+async function loadUsers(){
+  if(!window.__msaListUsers){ notify('Firebase not ready.','err'); return; }
+  document.getElementById('users-list').innerHTML='<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">Loading...</div>';
+  allUsersCache = await window.__msaListUsers();
+  renderUsers(allUsersCache);
+}
+
+function renderUsers(users){
+  const el = document.getElementById('users-list');
+  if(!users.length){
+    el.innerHTML='<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">No users found.</div>';
+    return;
+  }
+  el.innerHTML = users.map(u => `
+    <div class="user-card">
+      <div class="user-card-info">
+        <div class="user-card-name">${u.name||'—'}
+          <span class="user-badge ${u.role==='admin'?'badge-admin':'badge-active'}" style="margin-left:6px">${u.role||'user'}</span>
+          <span class="user-badge ${u.isActive!==false?'badge-active':'badge-inactive'}" style="margin-left:4px">${u.isActive!==false?'Active':'Inactive'}</span>
+        </div>
+        <div class="user-card-meta">📧 ${u.email||'—'} · 🏢 ${u.department||'—'} · 📱 ${u.phone||'—'}</div>
+        ${u.licenseKey?`<div class="user-card-meta" style="color:var(--a1)">🔑 ${u.licenseKey}</div>`:''}
+      </div>
+      <div class="user-card-actions">
+        <button class="btn btn-xs" onclick="toggleUserStatus('${u.id}',${u.isActive!==false})">${u.isActive!==false?'Deactivate':'Activate'}</button>
+        <button class="btn btn-xs btn-red" onclick="deleteUser('${u.id}','${u.name||u.email}')">Delete</button>
+      </div>
+    </div>`).join('');
+}
+
+function filterUsers(){
+  const q = document.getElementById('user-search').value.toLowerCase();
+  renderUsers(allUsersCache.filter(u => (u.name||'').toLowerCase().includes(q)||(u.email||'').toLowerCase().includes(q)));
+}
+
+async function toggleUserStatus(id, currentActive){
+  const res = await window.__msaUpdateUser(id, {isActive: !currentActive});
+  if(res.success){ notify('User status updated.','ok'); loadUsers(); }
+  else notify('Error: ' + res.error, 'err');
+}
+
+async function deleteUser(id, name){
+  if(!confirm(`Delete user "${name}"? This cannot be undone.`)) return;
+  const res = await window.__msaDeleteUser(id);
+  if(res.success){ notify('User deleted.','ok'); loadUsers(); }
+  else notify('Error: ' + res.error, 'err');
+}
+
+// ── LICENSE MANAGEMENT ──
+async function createLicense(){
+  const company = document.getElementById('nl-company').value.trim();
+  if(!company){ notify('Company name is required.','err'); return; }
+  const expiry = document.getElementById('nl-expiry').value;
+  if(!expiry){ notify('Expiry date is required.','err'); return; }
+  const customKey = document.getElementById('nl-customkey').value.trim().toUpperCase().replace(/[^A-Z0-9\-]/g,'');
+  const licData = {
+    company,
+    customerName: document.getElementById('nl-customer').value.trim(),
+    email: document.getElementById('nl-email').value.trim(),
+    expiryDate: new Date(expiry).toISOString(),
+    maxUsers: parseInt(document.getElementById('nl-maxusers').value)||5,
+    notes: document.getElementById('nl-notes').value.trim(),
+    ...(customKey ? {key: customKey} : {})
+  };
+  notify('Generating license...','info');
+  const res = await window.__msaCreateLicense(licData);
+  if(res.success){
+    notify('License created: ' + res.key, 'ok');
+    document.getElementById('gen-key-result').textContent = res.key;
+    document.getElementById('gen-key-result').style.display = 'block';
+    document.getElementById('copy-key-btn').style.display = 'inline-flex';
+    loadLicenses();
+  } else {
+    notify('Error: ' + res.error, 'err');
+  }
+}
+
+function copyGenKey(){
+  const key = document.getElementById('gen-key-result').textContent;
+  navigator.clipboard.writeText(key).then(()=>notify('Key copied to clipboard!','ok'));
+}
+
+async function loadLicenses(){
+  if(!window.__msaListLicenses){ notify('Firebase not ready.','err'); return; }
+  document.getElementById('licenses-list').innerHTML='<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">Loading...</div>';
+  allLicensesCache = await window.__msaListLicenses();
+  renderLicenses(allLicensesCache);
+}
+
+function renderLicenses(lics){
+  const el = document.getElementById('licenses-list');
+  if(!lics.length){
+    el.innerHTML='<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">No licenses found.</div>';
+    return;
+  }
+  el.innerHTML = lics.map(l => {
+    const exp = l.expiryDate ? new Date(l.expiryDate.seconds?l.expiryDate.seconds*1000:l.expiryDate) : null;
+    const expired = exp && exp < new Date();
+    const daysLeft = exp ? Math.ceil((exp-new Date())/(1000*60*60*24)) : null;
+    return `<div class="lic-card">
+      <div style="flex:1;min-width:0">
+        <div class="lic-key">${l.id||l.key||'—'}
+          <span class="user-badge ${l.isActive&&!expired?'badge-active':'badge-inactive'}" style="margin-left:8px">${!l.isActive?'Revoked':expired?'Expired':'Active'}</span>
+        </div>
+        <div class="lic-meta">🏢 ${l.company||'—'} · 👤 ${l.customerName||'—'} · 📧 ${l.email||'—'}</div>
+        <div class="lic-meta">📅 Expires: ${exp?exp.toLocaleDateString('en-IN'):'—'} ${daysLeft!=null?`(${daysLeft>0?daysLeft+'d left':'expired'})`:''}  · 👥 Max: ${l.maxUsers||'—'} · Activations: ${l.activationCount||0}</div>
+        ${l.notes?`<div class="lic-meta" style="color:var(--text2)">📝 ${l.notes}</div>`:''}
+      </div>
+      <div class="user-card-actions">
+        <button class="btn btn-xs" onclick="navigator.clipboard.writeText('${l.id||l.key||''}').then(()=>notify('Key copied!','ok'))">📋</button>
+        <button class="btn btn-xs" onclick="toggleLicenseStatus('${l.id}',${!!l.isActive})">${l.isActive?'Revoke':'Restore'}</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function filterLicenses(){
+  const q = document.getElementById('lic-search').value.toLowerCase();
+  renderLicenses(allLicensesCache.filter(l => (l.id||'').toLowerCase().includes(q)||(l.company||'').toLowerCase().includes(q)));
+}
+
+async function toggleLicenseStatus(id, current){
+  const res = await window.__msaUpdateUser ? await (async()=>{
+    // Use Firestore directly via window function not available, handle with notify
+    notify('Use Firebase console to revoke/restore licenses.','info');
+    return {success:false};
+  })() : {success:false};
+}
+
 function runCurrentAnalysis(){
   if(!guardAction())return;
   const t=document.querySelector('.module-tab.active').textContent;
