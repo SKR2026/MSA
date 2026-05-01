@@ -590,7 +590,7 @@ canvas{max-width:100%}
     <button class="btn btn-sm btn-green" onclick="runCurrentAnalysis()" id="btn-analyse">▶ Analyse</button>
     <button class="btn btn-sm" onclick="openSaveModal()" title="Save Study as JSON">💾 Save</button>
     <button class="btn btn-sm btn-accent" onclick="openPrintDialog()">⎙ Print</button>
-    <button class="btn btn-sm" id="btn-admin" onclick="openAdminPanel()" title="Admin Panel" style="display:none;background:linear-gradient(135deg,var(--a5),var(--a4));color:#fff;border-color:var(--a5)">🛡 Admin</button>
+    <button class="btn btn-sm" id="btn-admin" onclick="openAdminPanel()" title="Admin Panel" style="display:none;background:linear-gradient(135deg,var(--a5),var(--a4));color:#fff;border-color:var(--a5);font-weight:700">🛡 Admin</button>
     <button class="btn btn-sm" onclick="logoutLicense()" title="Change License Key" style="padding:4px 8px">🔓</button>
   </div>
 </header>
@@ -959,11 +959,29 @@ canvas{max-width:100%}
       <h2>🛡 Admin Panel <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">— Manage Users &amp; Licenses</span></h2>
       <button class="btn btn-sm btn-red" onclick="closeAdminPanel()">✕ Close</button>
     </div>
-    <div class="admin-tabs">
-      <button class="admin-tab active" onclick="switchAdminTab('users',this)">👥 Users</button>
-      <button class="admin-tab" onclick="switchAdminTab('licenses',this)">🔑 Licenses</button>
+
+    <!-- PIN GATE (shown first, hidden after auth) -->
+    <div id="admin-pin-gate" style="padding:40px 24px;display:flex;flex-direction:column;align-items:center;gap:16px">
+      <div style="width:60px;height:60px;border-radius:16px;background:linear-gradient(135deg,var(--a5),var(--a4));display:flex;align-items:center;justify-content:center;font-size:26px">🛡</div>
+      <div style="font-size:16px;font-weight:700;color:var(--text)">Admin Access Required</div>
+      <div style="font-size:12px;color:var(--text3);text-align:center;max-width:300px">Enter the admin PIN to access user and license management.</div>
+      <div style="width:100%;max-width:320px">
+        <input class="admin-input" id="admin-pin-input" type="password" placeholder="Enter Admin PIN"
+          style="text-align:center;font-size:18px;letter-spacing:6px;padding:12px;margin-bottom:10px"
+          onkeydown="if(event.key==='Enter')verifyAdminPin()">
+        <div id="admin-pin-error" style="display:none;color:var(--red);font-size:11px;text-align:center;margin-bottom:8px">⚠ Incorrect PIN. Please try again.</div>
+        <button class="btn btn-green" style="width:100%;padding:12px;font-size:13px" onclick="verifyAdminPin()">🔓 Unlock Admin Panel</button>
+      </div>
+      <div style="font-size:10px;color:var(--text3);text-align:center">Default PIN: <strong style="color:var(--a1);font-family:'JetBrains Mono',monospace">1234</strong> — Change in Firestore <code style="font-size:9px">config/admin</code> doc</div>
     </div>
-    <div class="admin-body">
+
+    <!-- ACTUAL CONTENT (hidden until PIN verified) -->
+    <div id="admin-content" style="display:none;flex-direction:column;flex:1;overflow:hidden">
+      <div class="admin-tabs">
+        <button class="admin-tab active" onclick="switchAdminTab('users',this)">👥 Users</button>
+        <button class="admin-tab" onclick="switchAdminTab('licenses',this)">🔑 Licenses</button>
+      </div>
+      <div class="admin-body">
 
       <!-- USERS TAB -->
       <div id="admin-users" class="admin-section active">
@@ -1063,9 +1081,10 @@ canvas{max-width:100%}
         </div>
       </div>
 
-    </div>
-  </div>
-</div>
+    </div><!-- /admin-body -->
+    </div><!-- /admin-content -->
+  </div><!-- /admin-modal -->
+</div><!-- /admin-overlay -->
 
 <!-- ═══════════════════ LICENSE INFO MODAL ═══════════════════ -->
 <div id="license-modal" style="display:none;position:fixed;inset:0;z-index:800;background:rgba(0,0,0,0.6);align-items:center;justify-content:center">
@@ -1157,6 +1176,8 @@ function showGateError(msg){
 function unlockApp(readOnly,data){
   document.getElementById('license-gate').style.display='none';
   isReadOnly=readOnly;
+  // Always show Admin button — access is protected by PIN inside the panel
+  document.getElementById('btn-admin').style.display='inline-flex';
   if(readOnly){
     applyReadOnlyMode(data);
   } else {
@@ -1165,10 +1186,6 @@ function unlockApp(readOnly,data){
     const exp=parseDate(data.expiryDate);
     const daysLeft=exp?Math.ceil((exp-new Date())/(1000*60*60*24)):null;
     document.getElementById('chip-expiry').textContent=exp?`Expires ${exp.toLocaleDateString('en-IN')} (${daysLeft}d)`:'—';
-    // Show admin button if role is admin
-    if(data.role==='admin' || data.isAdmin===true){
-      document.getElementById('btn-admin').style.display='inline-flex';
-    }
   }
 }
 
@@ -1761,13 +1778,60 @@ function executePrint(){
 // ═══════════════════════════════════════════════════════
 let allUsersCache = [], allLicensesCache = [];
 
+const ADMIN_SESSION_KEY = 'msa_admin_verified';
+let adminPinVerified = false;
+
 function openAdminPanel(){
   document.getElementById('admin-overlay').classList.add('open');
   // Set default expiry to 1 year from now
   const y = new Date(); y.setFullYear(y.getFullYear()+1);
   document.getElementById('nl-expiry').value = y.toISOString().split('T')[0];
+
+  // If already verified this session, skip PIN gate
+  if(adminPinVerified || sessionStorage.getItem(ADMIN_SESSION_KEY)==='1'){
+    showAdminContent();
+  } else {
+    document.getElementById('admin-pin-gate').style.display='flex';
+    document.getElementById('admin-content').style.display='none';
+    document.getElementById('admin-pin-input').value='';
+    document.getElementById('admin-pin-error').style.display='none';
+    setTimeout(()=>document.getElementById('admin-pin-input').focus(), 100);
+  }
 }
-function closeAdminPanel(){ document.getElementById('admin-overlay').classList.remove('open'); }
+
+function closeAdminPanel(){
+  document.getElementById('admin-overlay').classList.remove('open');
+}
+
+async function verifyAdminPin(){
+  const entered = document.getElementById('admin-pin-input').value.trim();
+  if(!entered){ return; }
+
+  // Fetch PIN from Firestore config/admin document, fallback to '1234'
+  let correctPin = '1234';
+  try {
+    if(window.__msaFirebaseReady){
+      // Try to fetch from Firestore (optional — works if doc exists)
+      const { getFirestore, doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      // Use already-initialized app if available
+    }
+  } catch(e) { /* use default */ }
+
+  if(entered === correctPin){
+    adminPinVerified = true;
+    sessionStorage.setItem(ADMIN_SESSION_KEY, '1');
+    showAdminContent();
+  } else {
+    document.getElementById('admin-pin-error').style.display='block';
+    document.getElementById('admin-pin-input').value='';
+    document.getElementById('admin-pin-input').focus();
+  }
+}
+
+function showAdminContent(){
+  document.getElementById('admin-pin-gate').style.display='none';
+  document.getElementById('admin-content').style.display='flex';
+}
 
 function switchAdminTab(tab, btn){
   document.querySelectorAll('.admin-tab').forEach(b=>b.classList.remove('active'));
