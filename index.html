@@ -1698,10 +1698,9 @@ function selectSaveOpt(type){
 }
 
 function executeSave(){
-  if(selectedSaveOpt==='json') saveStudyJSON();
-  else if(selectedSaveOpt==='csv') exportCSV();
-  else if(selectedSaveOpt==='print') executePrint();
-  closeSaveModal();
+  if(selectedSaveOpt==='json'){ saveStudyJSON(); closeSaveModal(); }
+  else if(selectedSaveOpt==='csv'){ exportCSV(); closeSaveModal(); }
+  else if(selectedSaveOpt==='print'){ closeSaveModal(); executePrint(); }
 }
 
 function saveStudyJSON(){
@@ -1770,7 +1769,8 @@ function exportCSV(){
 }
 
 function openPrintDialog(){
-  executePrint();
+  openSaveModal();
+  selectSaveOpt('print');
 }
 
 function executePrint(){
@@ -1785,13 +1785,13 @@ function executePrint(){
   document.getElementById('ph-prepby').textContent = document.getElementById('f-prepby').value || '\u2014';
 
   // 2. Read checkboxes and apply body classes to control print visibility
+  // For all except pc-all-modules: add class when UNCHECKED (exclude from print)
   const checks = {
-    'pc-header':      'no-print-header',
-    'pc-kpi':         'no-print-kpi',
-    'pc-tables':      'no-print-tables',
-    'pc-charts':      'no-print-charts',
-    'pc-verdict':     'no-print-verdict',
-    'pc-all-modules': 'no-print-modules'
+    'pc-header':  'no-print-header',
+    'pc-kpi':     'no-print-kpi',
+    'pc-tables':  'no-print-tables',
+    'pc-charts':  'no-print-charts',
+    'pc-verdict': 'no-print-verdict',
   };
   const body = document.body;
   Object.entries(checks).forEach(function(entry) {
@@ -1800,8 +1800,17 @@ function executePrint(){
     if (cb && !cb.checked) { body.classList.add(cls); }
     else { body.classList.remove(cls); }
   });
+  // pc-all-modules: when CHECKED = include all modules (remove hide class)
+  var cbModules = document.getElementById('pc-all-modules');
+  if (cbModules && !cbModules.checked) { body.classList.add('no-print-modules'); }
+  else { body.classList.remove('no-print-modules'); }
 
-  // 3. Make ALL analysis sub-panels temporarily visible so print captures them
+  // 3. Make ALL module panels and sub-panels temporarily visible
+  var allModulePanels = document.querySelectorAll('.module-panel');
+  var hiddenModules = [];
+  allModulePanels.forEach(function(p) {
+    if (!p.classList.contains('active')) { hiddenModules.push(p); p.classList.add('active'); }
+  });
   var allSubPanels = document.querySelectorAll('.sub-panel');
   var hiddenPanels = [];
   allSubPanels.forEach(function(p) {
@@ -1815,11 +1824,16 @@ function executePrint(){
     if (el && el.style.display === 'none') { hiddenContents.push(el); el.style.display = ''; }
   });
 
-  // 4. Print, then restore everything
-  window.print();
-  hiddenPanels.forEach(function(p) { p.classList.remove('active'); });
-  hiddenContents.forEach(function(el) { el.style.display = 'none'; });
-  Object.values(checks).forEach(function(cls) { body.classList.remove(cls); });
+  // 4. Give browser a frame to render the DOM changes, then print and restore
+  setTimeout(function() {
+    window.print();
+    // Restore everything after print dialog closes
+    hiddenModules.forEach(function(p) { p.classList.remove('active'); });
+    hiddenPanels.forEach(function(p) { p.classList.remove('active'); });
+    hiddenContents.forEach(function(el) { el.style.display = 'none'; });
+    Object.values(checks).forEach(function(cls) { body.classList.remove(cls); });
+    body.classList.remove('no-print-modules');
+  }, 150);
 }
 
 // ═══════════════════════════════════════════════════════
