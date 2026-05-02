@@ -505,33 +505,45 @@ canvas{max-width:100%}
 .print-check input[type=checkbox]{width:14px;height:14px;accent-color:var(--a1)}
 
 @media print {
+  /* ── Hide all UI chrome ── */
   #license-gate,#readonly-banner,.topbar,.sidebar,.module-tabs,.sub-tabs,.btn,.upload-zone,
-  .admin-overlay,.save-overlay,.notif,#admin-fab{display:none!important}
-  .layout{display:block}.main{overflow:visible;height:auto}
-  .module-panel,.sub-panel{display:block!important}
-  body{background:white;color:black}
-  .card,.chart-wrap,.kpi{background:white;border:1px solid #ccc;break-inside:avoid}
-  .print-header{display:block!important}
-  @page{size:A3 landscape;margin:12mm}
+  .admin-overlay,.save-overlay,.notif,#admin-fab,
+  #grr-data,#bias-data,#stability-data,#attribute-data { display:none!important }
 
-  /* ── Force all result content divs visible, hide all empty states ── */
-  #grr-anova-content,#grr-avgr-content,#grr-charts-content,#grr-var-content,
-  #bias-content,#linearity-content,#stab-content,#attr-content { display:block!important }
-  #grr-anova-empty,#grr-avgr-empty,#grr-charts-empty,#grr-var-empty,
-  #bias-empty,#linearity-empty,#stab-empty,#attr-empty { display:none!important }
+  /* ── Layout reset ── */
+  .layout { display:block!important }
+  .main   { overflow:visible!important; height:auto!important; display:block!important; }
+
+  /* ── Make all module panels and sub-panels visible and flow as blocks ── */
+  .module-panel { display:block!important; overflow:visible!important; height:auto!important; flex:none!important; }
+  .sub-panel    { display:block!important; overflow:visible!important; }
+
+  /* ── Force all result content divs visible ── */
+  #grr-anova-content, #grr-avgr-content, #grr-charts-content, #grr-var-content,
+  #bias-content, #linearity-content, #stab-content, #attr-content { display:block!important }
+
+  /* ── Hide all empty-state placeholder divs ── */
+  .empty,
+  #grr-anova-empty, #grr-avgr-empty, #grr-charts-empty, #grr-var-empty,
+  #bias-empty, #linearity-empty, #stab-empty, #attr-empty { display:none!important }
+
+  body { background:white!important; color:black!important; }
+  .card,.chart-wrap,.chart-wrap-full,.kpi { background:white!important; border:1px solid #ccc!important; break-inside:avoid; }
+  .print-header { display:block!important }
+  @page { size:A3 landscape; margin:12mm }
 
   /* ── Checkbox-driven print exclusions ── */
-  body.no-print-header   #print-header                        { display:none!important }
-  body.no-print-kpi      .kpi-grid, body.no-print-kpi .kpi    { display:none!important }
-  body.no-print-tables   .tbl-wrap, body.no-print-tables table.t { display:none!important }
+  body.no-print-header   #print-header                                         { display:none!important }
+  body.no-print-kpi      .kpi-grid, body.no-print-kpi .kpi                     { display:none!important }
+  body.no-print-tables   .tbl-wrap, body.no-print-tables table.t               { display:none!important }
   body.no-print-charts   .chart-wrap, body.no-print-charts .chart-wrap-full,
-  body.no-print-charts   canvas                               { display:none!important }
-  body.no-print-verdict  [id$="-verdict"]                     { display:none!important }
+  body.no-print-charts   canvas                                                 { display:none!important }
+  body.no-print-verdict  [id$="-verdict"]                                       { display:none!important }
   body.no-print-modules  #grr-anova, body.no-print-modules #grr-avgr,
   body.no-print-modules  #grr-charts, body.no-print-modules #grr-variance,
   body.no-print-modules  #bias-bias, body.no-print-modules #bias-linearity,
   body.no-print-modules  #stability-results,
-  body.no-print-modules  #attribute-results                   { display:none!important }
+  body.no-print-modules  #attribute-results                                     { display:none!important }
 }
 .print-header{display:none;margin-bottom:16px;border-bottom:2px solid #ccc;padding-bottom:12px}
 </style>
@@ -973,7 +985,7 @@ canvas{max-width:100%}
             <label class="print-check"><input type="checkbox" id="pc-tables" checked> Data Tables</label>
             <label class="print-check"><input type="checkbox" id="pc-charts" checked> Charts</label>
             <label class="print-check"><input type="checkbox" id="pc-verdict" checked> Verdict / Decision</label>
-            <label class="print-check"><input type="checkbox" id="pc-all-modules"> All Analysis Modules</label>
+            <label class="print-check"><input type="checkbox" id="pc-all-modules" checked> All Analysis Modules</label>
           </div>
         </div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:12px">Tip: In the print dialog, choose <em>Save as PDF</em> to create a digital copy.</div>
@@ -1822,20 +1834,31 @@ function executePrint(){
   allSubPanels.forEach(function(p) {
     if (!p.classList.contains('active')) { hiddenPanels.push(p); p.classList.add('active'); }
   });
+
+  // Force all result content divs to display:block (overrides inline display:none)
   var contentDivIds = ['grr-anova-content','grr-avgr-content','grr-charts-content','grr-var-content',
                         'bias-content','linearity-content','stab-content','attr-content'];
   var hiddenContents = [];
   contentDivIds.forEach(function(id) {
     var el = document.getElementById(id);
-    if (el && el.style.display === 'none') { hiddenContents.push(el); el.style.display = 'block'; }
+    if (el) {
+      var prev = el.style.display;
+      hiddenContents.push({ el: el, prev: prev });
+      el.style.display = 'block';
+    }
   });
-  // Hide all empty-state placeholder divs during print
+
+  // Force all empty-state divs hidden (they use display:flex in CSS which bleeds through)
   var emptyDivIds = ['grr-anova-empty','grr-avgr-empty','grr-charts-empty','grr-var-empty',
                      'bias-empty','linearity-empty','stab-empty','attr-empty'];
-  var shownEmpties = [];
+  var hiddenEmpties = [];
   emptyDivIds.forEach(function(id) {
     var el = document.getElementById(id);
-    if (el && el.style.display !== 'none') { shownEmpties.push(el); el.style.display = 'none'; }
+    if (el) {
+      var prev = el.style.display;
+      hiddenEmpties.push({ el: el, prev: prev });
+      el.style.display = 'none';
+    }
   });
 
   // 4. Redraw all charts now that their containers are visible (canvases were zero-size when hidden)
@@ -1852,8 +1875,8 @@ function executePrint(){
       // Restore everything after print dialog closes
       hiddenModules.forEach(function(p) { p.classList.remove('active'); });
       hiddenPanels.forEach(function(p) { p.classList.remove('active'); });
-      hiddenContents.forEach(function(el) { el.style.display = 'none'; });
-      shownEmpties.forEach(function(el) { el.style.display = ''; });
+      hiddenContents.forEach(function(item) { item.el.style.display = item.prev; });
+      hiddenEmpties.forEach(function(item) { item.el.style.display = item.prev; });
       Object.values(checks).forEach(function(cls) { body.classList.remove(cls); });
       body.classList.remove('no-print-modules');
     }, 300);
