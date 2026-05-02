@@ -505,87 +505,29 @@ canvas{max-width:100%}
 .print-check input[type=checkbox]{width:14px;height:14px;accent-color:var(--a1)}
 
 @media print {
-  /* ── Hide all UI chrome ── */
   #license-gate,#readonly-banner,.topbar,.sidebar,.module-tabs,.sub-tabs,.btn,.upload-zone,
-  .admin-overlay,.save-overlay,.notif,#admin-fab,
-  #grr-data,#bias-data,#stability-data,#attribute-data { display:none!important }
-
-  /* ── Layout reset ── */
-  .layout { display:block!important }
-  .main   { overflow:visible!important; height:auto!important; display:block!important; }
-
-  /* ── Make all module panels and sub-panels visible and flow as blocks ── */
-  .module-panel { display:block!important; overflow:visible!important; height:auto!important; flex:none!important; }
-  .sub-panel    { display:block!important; overflow:visible!important; }
-
-  /* ── Force all result content divs visible ── */
-  #grr-anova-content, #grr-avgr-content, #grr-charts-content, #grr-var-content,
-  #bias-content, #linearity-content, #stab-content, #attr-content { display:block!important }
-
-  /* ── Also override any inline display:none on content divs (belt-and-suspenders) ── */
-  [id$="-content"]:not([id$="-data"]) { display:block!important }
-
-  /* ── Hide all empty-state placeholder divs ── */
-  .empty,
-  #grr-anova-empty, #grr-avgr-empty, #grr-charts-empty, #grr-var-empty,
-  #bias-empty, #linearity-empty, #stab-empty, #attr-empty { display:none!important }
-
-  body { background:white!important; color:black!important; }
-  .card,.chart-wrap,.chart-wrap-full,.kpi { background:white!important; border:1px solid #ccc!important; break-inside:avoid; }
-  .print-header { display:block!important }
-  @page { size:A3 landscape; margin:12mm }
-
-  /* ── Prevent canvas/chart collapse during print ── */
-  canvas { display:block!important; max-width:100%!important; }
-  .chart-wrap, .chart-wrap-full {
-    display:block!important;
-    overflow:visible!important;
-    min-height:200px!important;
-    page-break-inside:avoid!important;
-    break-inside:avoid!important;
-  }
-  .chart-grid-2, .chart-grid-3 {
-    display:grid!important;
-    overflow:visible!important;
-  }
-
-  /* ── Module section headers (injected by JS before each module) ── */
-  .print-module-header {
-    display: block!important;
-    background: #1a2040!important;
-    color: #ffffff!important;
-    font-size: 14px!important;
-    font-weight: 700!important;
-    padding: 8px 14px!important;
-    margin: 18px 0 10px!important;
-    border-radius: 6px!important;
-    page-break-before: auto!important;
-    break-before: auto!important;
-    -webkit-print-color-adjust: exact!important;
-    print-color-adjust: exact!important;
-  }
-  /* Put each module on its own page (except the first) */
-  .module-panel + .print-module-header,
-  .print-module-header ~ .module-panel {
-    page-break-before: always!important;
-    break-before: page!important;
-  }
+  .admin-overlay,.save-overlay,.notif,#admin-fab{display:none!important}
+  .layout{display:block}.main{overflow:visible;height:auto}
+  .module-panel,.sub-panel{display:block!important}
+  body{background:white;color:black}
+  .card,.chart-wrap,.kpi{background:white;border:1px solid #ccc;break-inside:avoid}
+  .print-header{display:block!important}
+  @page{size:A3 landscape;margin:12mm}
 
   /* ── Checkbox-driven print exclusions ── */
-  body.no-print-header   #print-header                                         { display:none!important }
-  body.no-print-kpi      .kpi-grid, body.no-print-kpi .kpi                     { display:none!important }
-  body.no-print-tables   .tbl-wrap, body.no-print-tables table.t               { display:none!important }
+  body.no-print-header   #print-header                        { display:none!important }
+  body.no-print-kpi      .kpi-grid, body.no-print-kpi .kpi    { display:none!important }
+  body.no-print-tables   .tbl-wrap, body.no-print-tables table.t { display:none!important }
   body.no-print-charts   .chart-wrap, body.no-print-charts .chart-wrap-full,
-  body.no-print-charts   canvas                                                 { display:none!important }
-  body.no-print-verdict  [id$="-verdict"]                                       { display:none!important }
+  body.no-print-charts   canvas                               { display:none!important }
+  body.no-print-verdict  [id$="-verdict"]                     { display:none!important }
   body.no-print-modules  #grr-anova, body.no-print-modules #grr-avgr,
   body.no-print-modules  #grr-charts, body.no-print-modules #grr-variance,
   body.no-print-modules  #bias-bias, body.no-print-modules #bias-linearity,
   body.no-print-modules  #stability-results,
-  body.no-print-modules  #attribute-results                                     { display:none!important }
+  body.no-print-modules  #attribute-results                   { display:none!important }
 }
 .print-header{display:none;margin-bottom:16px;border-bottom:2px solid #ccc;padding-bottom:12px}
-.print-module-header{display:none}
 </style>
 </head>
 <body>
@@ -1025,7 +967,7 @@ canvas{max-width:100%}
             <label class="print-check"><input type="checkbox" id="pc-tables" checked> Data Tables</label>
             <label class="print-check"><input type="checkbox" id="pc-charts" checked> Charts</label>
             <label class="print-check"><input type="checkbox" id="pc-verdict" checked> Verdict / Decision</label>
-            <label class="print-check"><input type="checkbox" id="pc-all-modules" checked> All Analysis Modules</label>
+            <label class="print-check"><input type="checkbox" id="pc-all-modules"> All Analysis Modules</label>
           </div>
         </div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:12px">Tip: In the print dialog, choose <em>Save as PDF</em> to create a digital copy.</div>
@@ -1758,7 +1700,7 @@ function selectSaveOpt(type){
 function executeSave(){
   if(selectedSaveOpt==='json'){ saveStudyJSON(); closeSaveModal(); }
   else if(selectedSaveOpt==='csv'){ exportCSV(); closeSaveModal(); }
-  else if(selectedSaveOpt==='print'){ closeSaveModal(); setTimeout(executePrint, 80); }
+  else if(selectedSaveOpt==='print'){ closeSaveModal(); executePrint(); }
 }
 
 function saveStudyJSON(){
@@ -1863,188 +1805,45 @@ function executePrint(){
   if (cbModules && !cbModules.checked) { body.classList.add('no-print-modules'); }
   else { body.classList.remove('no-print-modules'); }
 
-  // 3. Determine which modules have data and should be printed
-  var printAllModules = (document.getElementById('pc-all-modules') || {checked: true}).checked;
-
-  // Map of module panel id → whether it has computed data
-  var moduleHasData = {
-    'mod-grr':       !!grrData,
-    'mod-bias':      !!biasData,
-    'mod-stability': !!stabData,
-    'mod-attribute': !!attrData
-  };
-  var moduleLabels = {
-    'mod-grr':       '📐 Gauge R&R Analysis',
-    'mod-bias':      '🎯 Bias & Linearity Analysis',
-    'mod-stability': '📊 Stability Analysis',
-    'mod-attribute': '🏷️ Attribute MSA'
-  };
-
-  // Track all DOM changes for restore
-  var hiddenModules   = [];
-  var hiddenPanels    = [];
-  var hiddenContents  = [];
-  var hiddenEmpties   = [];
-  var addedHeaders    = [];   // module section header divs we inject
-
-  // Which content/empty div sets belong to each module
-  var moduleContentMap = {
-    'mod-grr':       { content: ['grr-anova-content','grr-avgr-content','grr-charts-content','grr-var-content'],
-                       empty:   ['grr-anova-empty','grr-avgr-empty','grr-charts-empty','grr-var-empty'],
-                       subpanels: ['grr-anova','grr-avgr','grr-charts','grr-variance'] },
-    'mod-bias':      { content: ['bias-content','linearity-content'],
-                       empty:   ['bias-empty','linearity-empty'],
-                       subpanels: ['bias-bias','bias-linearity'] },
-    'mod-stability': { content: ['stab-content'],
-                       empty:   ['stab-empty'],
-                       subpanels: ['stability-results'] },
-    'mod-attribute': { content: ['attr-content'],
-                       empty:   ['attr-empty'],
-                       subpanels: ['attribute-results'] }
-  };
-
-  // For each module: show or hide depending on data + checkbox
-  ['mod-grr','mod-bias','mod-stability','mod-attribute'].forEach(function(modId) {
-    var modEl = document.getElementById(modId);
-    if (!modEl) return;
-    var shouldPrint = printAllModules ? moduleHasData[modId] : (modEl.classList.contains('active') && moduleHasData[modId]);
-
-    if (shouldPrint) {
-      // Make the module panel visible
-      if (!modEl.classList.contains('active')) {
-        hiddenModules.push(modEl);
-        modEl.classList.add('active');
-      }
-
-      // Inject a printed section header banner before this module panel
-      var hdr = document.createElement('div');
-      hdr.className = 'print-module-header';
-      hdr.innerHTML = '<span>' + moduleLabels[modId] + '</span>';
-      modEl.parentNode.insertBefore(hdr, modEl);
-      addedHeaders.push(hdr);
-
-      // Show all result sub-panels for this module, hide data-input sub-panels
-      var map = moduleContentMap[modId];
-
-      // Force result sub-panels visible
-      map.subpanels.forEach(function(spId) {
-        var sp = document.getElementById(spId);
-        if (sp && !sp.classList.contains('active')) {
-          hiddenPanels.push(sp);
-          sp.classList.add('active');
-        }
-      });
-
-      // Force content divs visible (overrides inline display:none set before analysis)
-      map.content.forEach(function(id) {
-        var el = document.getElementById(id);
-        if (el) {
-          hiddenContents.push({ el: el, prev: el.style.display });
-          el.style.display = 'block';
-        }
-      });
-
-      // Force empty-state divs hidden
-      map.empty.forEach(function(id) {
-        var el = document.getElementById(id);
-        if (el) {
-          hiddenEmpties.push({ el: el, prev: el.style.display });
-          el.style.display = 'none';
-        }
-      });
-
-    } else {
-      // Hide this module entirely — no data or not selected
-      if (modEl.classList.contains('active')) {
-        hiddenModules.push({ el: modEl, wasActive: true });
-        modEl.classList.remove('active');
-      } else {
-        // already hidden, just ensure it stays hidden
-      }
-    }
+  // 3. Make ALL module panels and sub-panels temporarily visible
+  var allModulePanels = document.querySelectorAll('.module-panel');
+  var hiddenModules = [];
+  allModulePanels.forEach(function(p) {
+    if (!p.classList.contains('active')) { hiddenModules.push(p); p.classList.add('active'); }
+  });
+  var allSubPanels = document.querySelectorAll('.sub-panel');
+  var hiddenPanels = [];
+  allSubPanels.forEach(function(p) {
+    if (!p.classList.contains('active')) { hiddenPanels.push(p); p.classList.add('active'); }
+  });
+  var contentDivIds = ['grr-anova-content','grr-avgr-content','grr-charts-content','grr-var-content',
+                        'bias-content','linearity-content','stab-content','attr-content'];
+  var hiddenContents = [];
+  contentDivIds.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el && el.style.display === 'none') { hiddenContents.push(el); el.style.display = ''; }
   });
 
-  // 4. Disable Chart.js animations so charts render instantly (no mid-animation blank frames)
-  Chart.defaults.animation = false;
-
-  // 4b. Force all canvas elements to have explicit pixel dimensions before redraw
-  //     (canvases inside hidden panels have 0x0 size; we must set them explicitly)
-  document.querySelectorAll('canvas').forEach(function(cv) {
-    var parent = cv.parentElement;
-    if (parent) {
-      var w = parent.offsetWidth || 400;
-      var h = cv.getAttribute('height') || 220;
-      cv.style.width  = w + 'px';
-      cv.style.height = h + 'px';
-      cv.width  = w;
-      cv.height = parseInt(h);
-    }
-  });
-
-  // 4c. Redraw all charts now that containers are visible and canvas sizes are correct
+  // 4. Redraw all charts now that their containers are visible (canvases were zero-size when hidden)
   if(grrData){ redrawGRRCharts(); }
   if(biasData){ redrawBiasCharts(); }
   if(stabData){ redrawStabCharts(); }
   if(attrData){ redrawAttrCharts(); }
 
-  // 5. Resize all charts, wait longer for full render, then print and restore
+  // 5. Resize any remaining charts and wait for Chart.js to fully re-render, then print and restore
   setTimeout(function() {
     Object.values(charts).forEach(function(c) { try { c.resize(); } catch(e) {} });
-
-    // Store restore data globally so onafterprint can use it
-    window._printRestoreData = {
-      hiddenModules: hiddenModules,
-      hiddenPanels: hiddenPanels,
-      hiddenContents: hiddenContents,
-      hiddenEmpties: hiddenEmpties,
-      addedHeaders: addedHeaders,
-      checks: checks,
-      body: body
-    };
-
-    // Wait 800ms (up from 300ms) so Chart.js fully paints all charts before browser snapshots the page
     setTimeout(function() {
       window.print();
-    }, 800);
-  }, 100);
+      // Restore everything after print dialog closes
+      hiddenModules.forEach(function(p) { p.classList.remove('active'); });
+      hiddenPanels.forEach(function(p) { p.classList.remove('active'); });
+      hiddenContents.forEach(function(el) { el.style.display = 'none'; });
+      Object.values(checks).forEach(function(cls) { body.classList.remove(cls); });
+      body.classList.remove('no-print-modules');
+    }, 300);
+  }, 50);
 }
-
-// ── PRINT EVENT HANDLERS (mirrors SPC pattern) ──
-// onafterprint: restore everything after the print dialog closes
-window.onafterprint = function() {
-  var rd = window._printRestoreData;
-  if (!rd) return;
-
-  // Remove injected module section headers
-  (rd.addedHeaders || []).forEach(function(h) { if (h.parentNode) h.parentNode.removeChild(h); });
-
-  // Restore module panels
-  (rd.hiddenModules || []).forEach(function(p) {
-    if (p.el) {
-      // Was active before, had active removed → restore active
-      if (p.wasActive) p.el.classList.add('active');
-    } else {
-      // Was inactive, had active added → remove active
-      p.classList.remove('active');
-    }
-  });
-  // Restore sub-panels
-  (rd.hiddenPanels || []).forEach(function(p) { p.classList.remove('active'); });
-  // Restore content div display
-  (rd.hiddenContents || []).forEach(function(item) { item.el.style.display = item.prev; });
-  // Restore empty div display
-  (rd.hiddenEmpties || []).forEach(function(item) { item.el.style.display = item.prev; });
-  // Remove body print classes
-  Object.values(rd.checks || {}).forEach(function(cls) { rd.body.classList.remove(cls); });
-  rd.body.classList.remove('no-print-modules');
-  window._printRestoreData = null;
-  // Re-enable animations and redraw active charts at correct size
-  Chart.defaults.animation = { duration: 400 };
-  if(grrData){ redrawGRRCharts(); }
-  if(biasData){ redrawBiasCharts(); }
-  if(stabData){ redrawStabCharts(); }
-  if(attrData){ redrawAttrCharts(); }
-};
 
 // ═══════════════════════════════════════════════════════
 //  ADMIN PANEL
