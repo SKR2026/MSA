@@ -42,14 +42,6 @@
     if (typeof val === 'object' && typeof val.seconds === 'number') return new Date(val.seconds * 1000);
     // ISO string or date string
     if (typeof val === 'string') {
-      // Handle DD/MM/YYYY, DD.MM.YYYY, DD/MM/YY, DD.MM.YY
-      const dmyMatch = val.match(/^(\d{1,2})[\/\.](\d{1,2})[\/\.](\d{2,4})$/);
-      if (dmyMatch) {
-        let dd = dmyMatch[1], mm = dmyMatch[2], yyyy = dmyMatch[3];
-        if (yyyy.length === 2) yyyy = '20' + yyyy;
-        const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
-        if (!isNaN(d.getTime())) return d;
-      }
       const d = new Date(val);
       return isNaN(d.getTime()) ? null : d;
     }
@@ -163,14 +155,6 @@
     } catch(e) { return { success: false, error: e.message }; }
   };
 
-  // ── ADMIN: Update license ──────────────────────────────
-  window.__msaUpdateLicense = async function(id, data) {
-    try {
-      await updateDoc(doc(db, 'licenses', id), { ...data, updatedAt: serverTimestamp() });
-      return { success: true };
-    } catch(e) { return { success: false, error: e.message }; }
-  };
-
   document.dispatchEvent(new Event('firebase-ready'));
 </script>
 
@@ -273,11 +257,10 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
 
 /* ── READ-ONLY BANNER ── */
 #readonly-banner {
-  position:fixed;top:0;left:0;right:0;z-index:500;
+  display:none;position:fixed;top:0;left:0;right:0;z-index:500;
   background:linear-gradient(90deg,#92400e,#b45309);
   color:#fef3c7;padding:8px 20px;font-size:12px;font-weight:600;
-  align-items:center;justify-content:space-between;
-  display:none;
+  display:flex;align-items:center;justify-content:space-between;
 }
 #readonly-banner.visible{display:flex}
 .ro-actions{display:flex;gap:10px;align-items:center}
@@ -513,19 +496,6 @@ canvas{max-width:100%}
   .card,.chart-wrap,.kpi{background:white;border:1px solid #ccc;break-inside:avoid}
   .print-header{display:block!important}
   @page{size:A3 landscape;margin:12mm}
-
-  /* ── Checkbox-driven print exclusions ── */
-  body.no-print-header   #print-header                        { display:none!important }
-  body.no-print-kpi      .kpi-grid, body.no-print-kpi .kpi    { display:none!important }
-  body.no-print-tables   .tbl-wrap, body.no-print-tables table.t { display:none!important }
-  body.no-print-charts   .chart-wrap, body.no-print-charts .chart-wrap-full,
-  body.no-print-charts   canvas                               { display:none!important }
-  body.no-print-verdict  [id$="-verdict"]                     { display:none!important }
-  body.no-print-modules  #grr-anova, body.no-print-modules #grr-avgr,
-  body.no-print-modules  #grr-charts, body.no-print-modules #grr-variance,
-  body.no-print-modules  #bias-bias, body.no-print-modules #bias-linearity,
-  body.no-print-modules  #stability-results,
-  body.no-print-modules  #attribute-results                   { display:none!important }
 }
 .print-header{display:none;margin-bottom:16px;border-bottom:2px solid #ccc;padding-bottom:12px}
 </style>
@@ -1114,7 +1084,7 @@ canvas{max-width:100%}
 //  CONSTANTS & STATE
 // ═══════════════════════════════════════════════════════
 const D4={2:3.267,3:2.574,4:2.282,5:2.114};
-const d2={2:1.128,3:1.693,4:2.059,5:2.326,6:2.534,7:2.704,8:2.847,9:2.970,10:3.078,11:3.173,12:3.258,13:3.336,14:3.407,15:3.472};
+const d2={2:1.128,3:1.693,4:2.059,5:2.326};
 const A2={2:1.880,3:1.023,4:0.729,5:0.577};
 let charts={}, grrData=null, biasData=null, stabData=null, attrData=null;
 let isReadOnly=false, currentLicense=null;
@@ -1217,10 +1187,11 @@ function applyReadOnlyMode(data){
   banner.classList.add('visible');
   const exp=parseDate(data.expiryDate);
   document.getElementById('ro-expiry-date').textContent=exp?exp.toLocaleDateString('en-IN'):'Unknown';
-  // Disable specific action buttons only (not admin/save/export buttons)
+  // Disable all action buttons
   ['btn-analyse','btn-demo','btn-run-grr','btn-run-bias','btn-run-stab','btn-run-attr'].forEach(id=>{
     const el=document.getElementById(id);if(el){el.disabled=true;el.title='License expired — read-only mode';}
   });
+  document.querySelectorAll('.btn-green,.btn-accent').forEach(b=>{b.disabled=true;});
 }
 
 function logoutLicense(){
@@ -1238,7 +1209,7 @@ function showLicenseInfo(){
     <div><strong style="color:var(--a1)">Customer:</strong> ${currentLicense.customerName||'—'}</div>
     <div><strong style="color:var(--a1)">Email:</strong> ${currentLicense.email||'—'}</div>
     <div><strong style="color:var(--a1)">Issued:</strong> ${iss?iss.toLocaleDateString('en-IN'):'—'}</div>
-    <div><strong style="color:var(--a1)">Expires:</strong> ${exp ? exp.toLocaleDateString('en-IN') : '—'}</div>
+    <div><strong style="color:var(--a1)">Expires:</strong> ${exp.toLocaleDateString('en-IN')}</div>
     <div><strong style="color:var(--a1)">Features:</strong> ${(currentLicense.features||[]).join(', ')||'All'}</div>
     <div><strong style="color:var(--a1)">Status:</strong> <span class="${isReadOnly?'td-bad':'td-ok'}">${isReadOnly?'⚠ EXPIRED':'✓ Active'}</span></div>
     ${currentLicense.notes?`<div><strong style="color:var(--a1)">Notes:</strong> ${currentLicense.notes}</div>`:''}
@@ -1255,12 +1226,10 @@ document.addEventListener('DOMContentLoaded',()=>{
       try{
         const s=JSON.parse(sess);
         // Re-validate against Firestore on every load
-        let sessionChecked=false;
-        const tryRevalidate=(key)=>{if(sessionChecked)return;sessionChecked=true;revalidateSession(key);};
         if(window.__msaFirebaseReady){
-          tryRevalidate(s.key);
+          revalidateSession(s.key);
         } else {
-          document.addEventListener('firebase-ready',()=>tryRevalidate(s.key),{once:true});
+          document.addEventListener('firebase-ready',()=>revalidateSession(s.key),{once:true});
         }
       } catch(e){localStorage.removeItem(SESSION_KEY);}
     }
@@ -1698,9 +1667,10 @@ function selectSaveOpt(type){
 }
 
 function executeSave(){
-  if(selectedSaveOpt==='json'){ saveStudyJSON(); closeSaveModal(); }
-  else if(selectedSaveOpt==='csv'){ exportCSV(); closeSaveModal(); }
-  else if(selectedSaveOpt==='print'){ closeSaveModal(); executePrint(); }
+  if(selectedSaveOpt==='json') saveStudyJSON();
+  else if(selectedSaveOpt==='csv') exportCSV();
+  else if(selectedSaveOpt==='print') executePrint();
+  closeSaveModal();
 }
 
 function saveStudyJSON(){
@@ -1769,80 +1739,20 @@ function exportCSV(){
 }
 
 function openPrintDialog(){
-  openSaveModal();
-  selectSaveOpt('print');
+  executePrint();
 }
 
 function executePrint(){
-  // 1. Populate print header
-  document.getElementById('ph-company').textContent = document.getElementById('f-company').value || '\u2014';
-  document.getElementById('ph-customer').textContent = document.getElementById('f-customer').value || '\u2014';
-  document.getElementById('ph-studyno').textContent = document.getElementById('f-studyno').value || '\u2014';
-  document.getElementById('ph-date').textContent = document.getElementById('f-date').value || '\u2014';
-  document.getElementById('ph-part').textContent = (document.getElementById('f-partname').value || '\u2014') + ' (' + (document.getElementById('f-partno').value || '') + ')';
-  document.getElementById('ph-char').textContent = document.getElementById('f-char').value || '\u2014';
-  document.getElementById('ph-gauge').textContent = (document.getElementById('f-gauge').value || '\u2014') + ' #' + (document.getElementById('f-gaugeno').value || '');
-  document.getElementById('ph-prepby').textContent = document.getElementById('f-prepby').value || '\u2014';
-
-  // 2. Read checkboxes and apply body classes to control print visibility
-  // For all except pc-all-modules: add class when UNCHECKED (exclude from print)
-  const checks = {
-    'pc-header':  'no-print-header',
-    'pc-kpi':     'no-print-kpi',
-    'pc-tables':  'no-print-tables',
-    'pc-charts':  'no-print-charts',
-    'pc-verdict': 'no-print-verdict',
-  };
-  const body = document.body;
-  Object.entries(checks).forEach(function(entry) {
-    var cbId = entry[0], cls = entry[1];
-    var cb = document.getElementById(cbId);
-    if (cb && !cb.checked) { body.classList.add(cls); }
-    else { body.classList.remove(cls); }
-  });
-  // pc-all-modules: when CHECKED = include all modules (remove hide class)
-  var cbModules = document.getElementById('pc-all-modules');
-  if (cbModules && !cbModules.checked) { body.classList.add('no-print-modules'); }
-  else { body.classList.remove('no-print-modules'); }
-
-  // 3. Make ALL module panels and sub-panels temporarily visible
-  var allModulePanels = document.querySelectorAll('.module-panel');
-  var hiddenModules = [];
-  allModulePanels.forEach(function(p) {
-    if (!p.classList.contains('active')) { hiddenModules.push(p); p.classList.add('active'); }
-  });
-  var allSubPanels = document.querySelectorAll('.sub-panel');
-  var hiddenPanels = [];
-  allSubPanels.forEach(function(p) {
-    if (!p.classList.contains('active')) { hiddenPanels.push(p); p.classList.add('active'); }
-  });
-  var contentDivIds = ['grr-anova-content','grr-avgr-content','grr-charts-content','grr-var-content',
-                        'bias-content','linearity-content','stab-content','attr-content'];
-  var hiddenContents = [];
-  contentDivIds.forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el && el.style.display === 'none') { hiddenContents.push(el); el.style.display = ''; }
-  });
-
-  // 4. Redraw all charts now that their containers are visible (canvases were zero-size when hidden)
-  if(grrData){ redrawGRRCharts(); }
-  if(biasData){ redrawBiasCharts(); }
-  if(stabData){ redrawStabCharts(); }
-  if(attrData){ redrawAttrCharts(); }
-
-  // 5. Resize any remaining charts and wait for Chart.js to fully re-render, then print and restore
-  setTimeout(function() {
-    Object.values(charts).forEach(function(c) { try { c.resize(); } catch(e) {} });
-    setTimeout(function() {
-      window.print();
-      // Restore everything after print dialog closes
-      hiddenModules.forEach(function(p) { p.classList.remove('active'); });
-      hiddenPanels.forEach(function(p) { p.classList.remove('active'); });
-      hiddenContents.forEach(function(el) { el.style.display = 'none'; });
-      Object.values(checks).forEach(function(cls) { body.classList.remove(cls); });
-      body.classList.remove('no-print-modules');
-    }, 300);
-  }, 50);
+  // Populate print header
+  document.getElementById('ph-company').textContent = document.getElementById('f-company').value || '—';
+  document.getElementById('ph-customer').textContent = document.getElementById('f-customer').value || '—';
+  document.getElementById('ph-studyno').textContent = document.getElementById('f-studyno').value || '—';
+  document.getElementById('ph-date').textContent = document.getElementById('f-date').value || '—';
+  document.getElementById('ph-part').textContent = (document.getElementById('f-partname').value || '—') + ' (' + (document.getElementById('f-partno').value || '') + ')';
+  document.getElementById('ph-char').textContent = document.getElementById('f-char').value || '—';
+  document.getElementById('ph-gauge').textContent = (document.getElementById('f-gauge').value || '—') + ' #' + (document.getElementById('f-gaugeno').value || '');
+  document.getElementById('ph-prepby').textContent = document.getElementById('f-prepby').value || '—';
+  window.print();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2013,10 +1923,11 @@ function filterLicenses(){
 }
 
 async function toggleLicenseStatus(id, current){
-  if(!window.__msaUpdateLicense){ notify('Firebase not ready.','err'); return; }
-  const res = await window.__msaUpdateLicense(id, { isActive: !current });
-  if(res.success){ notify('License status updated.','ok'); loadLicenses(); }
-  else notify('Error: ' + res.error, 'err');
+  const res = await window.__msaUpdateUser ? await (async()=>{
+    // Use Firestore directly via window function not available, handle with notify
+    notify('Use Firebase console to revoke/restore licenses.','info');
+    return {success:false};
+  })() : {success:false};
 }
 
 function runCurrentAnalysis(){
