@@ -549,6 +549,28 @@ canvas{max-width:100%}
     overflow:visible!important;
   }
 
+  /* ── Module section headers (injected by JS before each module) ── */
+  .print-module-header {
+    display: block!important;
+    background: #1a2040!important;
+    color: #ffffff!important;
+    font-size: 14px!important;
+    font-weight: 700!important;
+    padding: 8px 14px!important;
+    margin: 18px 0 10px!important;
+    border-radius: 6px!important;
+    page-break-before: auto!important;
+    break-before: auto!important;
+    -webkit-print-color-adjust: exact!important;
+    print-color-adjust: exact!important;
+  }
+  /* Put each module on its own page (except the first) */
+  .module-panel + .print-module-header,
+  .print-module-header ~ .module-panel {
+    page-break-before: always!important;
+    break-before: page!important;
+  }
+
   /* ── Checkbox-driven print exclusions ── */
   body.no-print-header   #print-header                                         { display:none!important }
   body.no-print-kpi      .kpi-grid, body.no-print-kpi .kpi                     { display:none!important }
@@ -563,6 +585,7 @@ canvas{max-width:100%}
   body.no-print-modules  #attribute-results                                     { display:none!important }
 }
 .print-header{display:none;margin-bottom:16px;border-bottom:2px solid #ccc;padding-bottom:12px}
+.print-module-header{display:none}
 </style>
 </head>
 <body>
@@ -1840,41 +1863,104 @@ function executePrint(){
   if (cbModules && !cbModules.checked) { body.classList.add('no-print-modules'); }
   else { body.classList.remove('no-print-modules'); }
 
-  // 3. Make ALL module panels and sub-panels temporarily visible
-  var allModulePanels = document.querySelectorAll('.module-panel');
-  var hiddenModules = [];
-  allModulePanels.forEach(function(p) {
-    if (!p.classList.contains('active')) { hiddenModules.push(p); p.classList.add('active'); }
-  });
-  var allSubPanels = document.querySelectorAll('.sub-panel');
-  var hiddenPanels = [];
-  allSubPanels.forEach(function(p) {
-    if (!p.classList.contains('active')) { hiddenPanels.push(p); p.classList.add('active'); }
-  });
+  // 3. Determine which modules have data and should be printed
+  var printAllModules = (document.getElementById('pc-all-modules') || {checked: true}).checked;
 
-  // Force all result content divs to display:block (overrides inline display:none)
-  var contentDivIds = ['grr-anova-content','grr-avgr-content','grr-charts-content','grr-var-content',
-                        'bias-content','linearity-content','stab-content','attr-content'];
-  var hiddenContents = [];
-  contentDivIds.forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) {
-      var prev = el.style.display;
-      hiddenContents.push({ el: el, prev: prev });
-      el.style.display = 'block';
-    }
-  });
+  // Map of module panel id → whether it has computed data
+  var moduleHasData = {
+    'mod-grr':       !!grrData,
+    'mod-bias':      !!biasData,
+    'mod-stability': !!stabData,
+    'mod-attribute': !!attrData
+  };
+  var moduleLabels = {
+    'mod-grr':       '📐 Gauge R&R Analysis',
+    'mod-bias':      '🎯 Bias & Linearity Analysis',
+    'mod-stability': '📊 Stability Analysis',
+    'mod-attribute': '🏷️ Attribute MSA'
+  };
 
-  // Force all empty-state divs hidden (they use display:flex in CSS which bleeds through)
-  var emptyDivIds = ['grr-anova-empty','grr-avgr-empty','grr-charts-empty','grr-var-empty',
-                     'bias-empty','linearity-empty','stab-empty','attr-empty'];
-  var hiddenEmpties = [];
-  emptyDivIds.forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) {
-      var prev = el.style.display;
-      hiddenEmpties.push({ el: el, prev: prev });
-      el.style.display = 'none';
+  // Track all DOM changes for restore
+  var hiddenModules   = [];
+  var hiddenPanels    = [];
+  var hiddenContents  = [];
+  var hiddenEmpties   = [];
+  var addedHeaders    = [];   // module section header divs we inject
+
+  // Which content/empty div sets belong to each module
+  var moduleContentMap = {
+    'mod-grr':       { content: ['grr-anova-content','grr-avgr-content','grr-charts-content','grr-var-content'],
+                       empty:   ['grr-anova-empty','grr-avgr-empty','grr-charts-empty','grr-var-empty'],
+                       subpanels: ['grr-anova','grr-avgr','grr-charts','grr-variance'] },
+    'mod-bias':      { content: ['bias-content','linearity-content'],
+                       empty:   ['bias-empty','linearity-empty'],
+                       subpanels: ['bias-bias','bias-linearity'] },
+    'mod-stability': { content: ['stab-content'],
+                       empty:   ['stab-empty'],
+                       subpanels: ['stability-results'] },
+    'mod-attribute': { content: ['attr-content'],
+                       empty:   ['attr-empty'],
+                       subpanels: ['attribute-results'] }
+  };
+
+  // For each module: show or hide depending on data + checkbox
+  ['mod-grr','mod-bias','mod-stability','mod-attribute'].forEach(function(modId) {
+    var modEl = document.getElementById(modId);
+    if (!modEl) return;
+    var shouldPrint = printAllModules ? moduleHasData[modId] : (modEl.classList.contains('active') && moduleHasData[modId]);
+
+    if (shouldPrint) {
+      // Make the module panel visible
+      if (!modEl.classList.contains('active')) {
+        hiddenModules.push(modEl);
+        modEl.classList.add('active');
+      }
+
+      // Inject a printed section header banner before this module panel
+      var hdr = document.createElement('div');
+      hdr.className = 'print-module-header';
+      hdr.innerHTML = '<span>' + moduleLabels[modId] + '</span>';
+      modEl.parentNode.insertBefore(hdr, modEl);
+      addedHeaders.push(hdr);
+
+      // Show all result sub-panels for this module, hide data-input sub-panels
+      var map = moduleContentMap[modId];
+
+      // Force result sub-panels visible
+      map.subpanels.forEach(function(spId) {
+        var sp = document.getElementById(spId);
+        if (sp && !sp.classList.contains('active')) {
+          hiddenPanels.push(sp);
+          sp.classList.add('active');
+        }
+      });
+
+      // Force content divs visible (overrides inline display:none set before analysis)
+      map.content.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) {
+          hiddenContents.push({ el: el, prev: el.style.display });
+          el.style.display = 'block';
+        }
+      });
+
+      // Force empty-state divs hidden
+      map.empty.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) {
+          hiddenEmpties.push({ el: el, prev: el.style.display });
+          el.style.display = 'none';
+        }
+      });
+
+    } else {
+      // Hide this module entirely — no data or not selected
+      if (modEl.classList.contains('active')) {
+        hiddenModules.push({ el: modEl, wasActive: true });
+        modEl.classList.remove('active');
+      } else {
+        // already hidden, just ensure it stays hidden
+      }
     }
   });
 
@@ -1911,6 +1997,7 @@ function executePrint(){
       hiddenPanels: hiddenPanels,
       hiddenContents: hiddenContents,
       hiddenEmpties: hiddenEmpties,
+      addedHeaders: addedHeaders,
       checks: checks,
       body: body
     };
@@ -1927,11 +2014,28 @@ function executePrint(){
 window.onafterprint = function() {
   var rd = window._printRestoreData;
   if (!rd) return;
-  rd.hiddenModules.forEach(function(p) { p.classList.remove('active'); });
-  rd.hiddenPanels.forEach(function(p) { p.classList.remove('active'); });
-  rd.hiddenContents.forEach(function(item) { item.el.style.display = item.prev; });
-  rd.hiddenEmpties.forEach(function(item) { item.el.style.display = item.prev; });
-  Object.values(rd.checks).forEach(function(cls) { rd.body.classList.remove(cls); });
+
+  // Remove injected module section headers
+  (rd.addedHeaders || []).forEach(function(h) { if (h.parentNode) h.parentNode.removeChild(h); });
+
+  // Restore module panels
+  (rd.hiddenModules || []).forEach(function(p) {
+    if (p.el) {
+      // Was active before, had active removed → restore active
+      if (p.wasActive) p.el.classList.add('active');
+    } else {
+      // Was inactive, had active added → remove active
+      p.classList.remove('active');
+    }
+  });
+  // Restore sub-panels
+  (rd.hiddenPanels || []).forEach(function(p) { p.classList.remove('active'); });
+  // Restore content div display
+  (rd.hiddenContents || []).forEach(function(item) { item.el.style.display = item.prev; });
+  // Restore empty div display
+  (rd.hiddenEmpties || []).forEach(function(item) { item.el.style.display = item.prev; });
+  // Remove body print classes
+  Object.values(rd.checks || {}).forEach(function(cls) { rd.body.classList.remove(cls); });
   rd.body.classList.remove('no-print-modules');
   window._printRestoreData = null;
   // Re-enable animations and redraw active charts at correct size
