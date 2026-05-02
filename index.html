@@ -522,6 +522,9 @@ canvas{max-width:100%}
   #grr-anova-content, #grr-avgr-content, #grr-charts-content, #grr-var-content,
   #bias-content, #linearity-content, #stab-content, #attr-content { display:block!important }
 
+  /* ── Also override any inline display:none on content divs (belt-and-suspenders) ── */
+  [id$="-content"]:not([id$="-data"]) { display:block!important }
+
   /* ── Hide all empty-state placeholder divs ── */
   .empty,
   #grr-anova-empty, #grr-avgr-empty, #grr-charts-empty, #grr-var-empty,
@@ -1718,7 +1721,7 @@ function selectSaveOpt(type){
 function executeSave(){
   if(selectedSaveOpt==='json'){ saveStudyJSON(); closeSaveModal(); }
   else if(selectedSaveOpt==='csv'){ exportCSV(); closeSaveModal(); }
-  else if(selectedSaveOpt==='print'){ closeSaveModal(); executePrint(); }
+  else if(selectedSaveOpt==='print'){ closeSaveModal(); setTimeout(executePrint, 80); }
 }
 
 function saveStudyJSON(){
@@ -1870,18 +1873,36 @@ function executePrint(){
   // 5. Resize any remaining charts and wait for Chart.js to fully re-render, then print and restore
   setTimeout(function() {
     Object.values(charts).forEach(function(c) { try { c.resize(); } catch(e) {} });
+
+    // Store restore data globally so onafterprint can use it
+    window._printRestoreData = {
+      hiddenModules: hiddenModules,
+      hiddenPanels: hiddenPanels,
+      hiddenContents: hiddenContents,
+      hiddenEmpties: hiddenEmpties,
+      checks: checks,
+      body: body
+    };
+
     setTimeout(function() {
       window.print();
-      // Restore everything after print dialog closes
-      hiddenModules.forEach(function(p) { p.classList.remove('active'); });
-      hiddenPanels.forEach(function(p) { p.classList.remove('active'); });
-      hiddenContents.forEach(function(item) { item.el.style.display = item.prev; });
-      hiddenEmpties.forEach(function(item) { item.el.style.display = item.prev; });
-      Object.values(checks).forEach(function(cls) { body.classList.remove(cls); });
-      body.classList.remove('no-print-modules');
     }, 300);
   }, 50);
 }
+
+// ── PRINT EVENT HANDLERS (mirrors SPC pattern) ──
+// onafterprint: restore everything after the print dialog closes
+window.onafterprint = function() {
+  var rd = window._printRestoreData;
+  if (!rd) return;
+  rd.hiddenModules.forEach(function(p) { p.classList.remove('active'); });
+  rd.hiddenPanels.forEach(function(p) { p.classList.remove('active'); });
+  rd.hiddenContents.forEach(function(item) { item.el.style.display = item.prev; });
+  rd.hiddenEmpties.forEach(function(item) { item.el.style.display = item.prev; });
+  Object.values(rd.checks).forEach(function(cls) { rd.body.classList.remove(cls); });
+  rd.body.classList.remove('no-print-modules');
+  window._printRestoreData = null;
+};
 
 // ═══════════════════════════════════════════════════════
 //  ADMIN PANEL
