@@ -13,9 +13,8 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-  import { getAuth, signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
-  // ▼▼▼ REPLACE WITH YOUR FIREBASE CONFIG ▼▼▼
   const firebaseConfig = {
     apiKey:            "AIzaSyD1Ey-yqHEqLB0NFOAfPND0N0TmwA4a6pE",
     authDomain:        "skr-msa.firebaseapp.com",
@@ -24,25 +23,36 @@
     messagingSenderId: "957782831083",
     appId:             "1:957782831083:web:bb7a5e4ec673c33198b3ae"
   };
-  // ▲▲▲ REPLACE WITH YOUR FIREBASE CONFIG ▲▲▲
 
   const app  = initializeApp(firebaseConfig);
   const db   = getFirestore(app);
   const auth = getAuth(app);
 
-  // Sign in anonymously so Firestore rules (request.auth != null) pass
-  try { await signInAnonymously(auth); } catch(e) { console.warn('Auth failed:', e.message); }
+  // ── Sign in anonymously (with retry) ──────────────────
+  // Firestore security rules require auth != null.
+  // We retry up to 3 times with a short delay to handle
+  // transient network hiccups on page load.
+  let authOk = false;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await signInAnonymously(auth);
+      authOk = true;
+      break;
+    } catch(e) {
+      console.warn(`Anonymous auth attempt ${attempt + 1} failed:`, e.code, e.message);
+      if (attempt < 2) await new Promise(r => setTimeout(r, 800));
+    }
+  }
+  // Even if anonymous auth failed, expose functions — Firestore
+  // may still be accessible if rules allow unauthenticated reads,
+  // and we surface proper errors otherwise.
 
-  // ── ROBUST DATE PARSER — handles all Firestore Timestamp formats ──
+  // ── ROBUST DATE PARSER ────────────────────────────────
   function parseFirestoreDate(val) {
     if (!val) return null;
-    // Native Firestore Timestamp with .toDate() method
     if (typeof val.toDate === 'function') return val.toDate();
-    // Plain object from SDK: { seconds: N, nanoseconds: N }
     if (typeof val === 'object' && typeof val.seconds === 'number') return new Date(val.seconds * 1000);
-    // ISO string or date string
     if (typeof val === 'string') {
-      // Handle DD/MM/YYYY, DD.MM.YYYY, DD/MM/YY, DD.MM.YY
       const dmyMatch = val.match(/^(\d{1,2})[\/\.](\d{1,2})[\/\.](\d{2,4})$/);
       if (dmyMatch) {
         let dd = dmyMatch[1], mm = dmyMatch[2], yyyy = dmyMatch[3];
@@ -53,12 +63,11 @@
       const d = new Date(val);
       return isNaN(d.getTime()) ? null : d;
     }
-    // Milliseconds number
     if (typeof val === 'number') return new Date(val);
     return null;
   }
 
-  // ── LICENSE VALIDATION ──────────────────────────────────
+  // ── LICENSE VALIDATION ────────────────────────────────
   async function validateLicense(key) {
     if (!key || key.trim() === '') return { valid: false, reason: 'NO_KEY' };
     const cleanKey = key.trim().toUpperCase();
@@ -73,11 +82,9 @@
 
       const now    = new Date();
       const expiry = parseFirestoreDate(data.expiryDate);
-
-      // If expiry date cannot be parsed, treat as valid (don't block on bad data)
       const expired = expiry ? (now > expiry) : false;
 
-      // Update last validated timestamp silently
+      // Update last validated timestamp — non-critical, ignore errors
       try {
         await updateDoc(ref, {
           lastValidated:   serverTimestamp(),
@@ -92,18 +99,18 @@
         data:     { ...data, expiryDate: expiry || data.expiryDate }
       };
     } catch(e) {
+      console.error('validateLicense error:', e.code, e.message);
       if (e.code === 'unavailable' || e.message?.includes('offline')) {
         return { valid: false, reason: 'OFFLINE' };
+      }
+      if (e.code === 'permission-denied') {
+        return { valid: false, reason: 'PERMISSION', message: 'Firestore permission denied. Check Firebase Auth is enabled.' };
       }
       return { valid: false, reason: 'ERROR', message: e.message };
     }
   }
 
-  // Expose to global scope
-  window.__msaValidate = validateLicense;
-  window.__msaFirebaseReady = true;
-
-  // ── ADMIN: List all users ──────────────────────────────
+  // ── ADMIN FUNCTIONS ───────────────────────────────────
   window.__msaListUsers = async function() {
     try {
       const snap = await getDocs(collection(db, 'users'));
@@ -111,20 +118,14 @@
     } catch(e) { return []; }
   };
 
-  // ── ADMIN: Create user ─────────────────────────────────
   window.__msaCreateUser = async function(userData) {
     try {
       const id = userData.email.toLowerCase().replace(/[^a-z0-9]/g, '_');
-      await setDoc(doc(db, 'users', id), {
-        ...userData,
-        createdAt: serverTimestamp(),
-        isActive: true
-      });
+      await setDoc(doc(db, 'users', id), { ...userData, createdAt: serverTimestamp(), isActive: true });
       return { success: true, id };
     } catch(e) { return { success: false, error: e.message }; }
   };
 
-  // ── ADMIN: Update user ─────────────────────────────────
   window.__msaUpdateUser = async function(id, data) {
     try {
       await updateDoc(doc(db, 'users', id), { ...data, updatedAt: serverTimestamp() });
@@ -132,7 +133,6 @@
     } catch(e) { return { success: false, error: e.message }; }
   };
 
-  // ── ADMIN: Delete user ─────────────────────────────────
   window.__msaDeleteUser = async function(id) {
     try {
       await deleteDoc(doc(db, 'users', id));
@@ -140,7 +140,6 @@
     } catch(e) { return { success: false, error: e.message }; }
   };
 
-  // ── ADMIN: List all licenses ───────────────────────────
   window.__msaListLicenses = async function() {
     try {
       const snap = await getDocs(collection(db, 'licenses'));
@@ -148,22 +147,16 @@
     } catch(e) { return []; }
   };
 
-  // ── ADMIN: Create license ──────────────────────────────
   window.__msaCreateLicense = async function(licData) {
     try {
       const key = licData.key || ('MSA-' + Array.from({length:3},()=>Math.random().toString(36).substr(2,4).toUpperCase()).join('-'));
       await setDoc(doc(db, 'licenses', key), {
-        ...licData,
-        key,
-        isActive: true,
-        activationCount: 0,
-        createdAt: serverTimestamp()
+        ...licData, key, isActive: true, activationCount: 0, createdAt: serverTimestamp()
       });
       return { success: true, key };
     } catch(e) { return { success: false, error: e.message }; }
   };
 
-  // ── ADMIN: Update license ──────────────────────────────
   window.__msaUpdateLicense = async function(id, data) {
     try {
       await updateDoc(doc(db, 'licenses', id), { ...data, updatedAt: serverTimestamp() });
@@ -171,7 +164,14 @@
     } catch(e) { return { success: false, error: e.message }; }
   };
 
-  document.dispatchEvent(new Event('firebase-ready'));
+  // ── Expose validate and mark ready ────────────────────
+  // Set validate FIRST, then set ready flag, then dispatch event.
+  // This order guarantees activateLicense() can call __msaValidate
+  // the moment it sees __msaFirebaseReady === true.
+  window.__msaValidate = validateLicense;
+  window.__msaAuthOk   = authOk;
+  window.__msaFirebaseReady = true;
+  document.dispatchEvent(new CustomEvent('firebase-ready', { detail: { authOk } }));
 </script>
 
 <style>
@@ -602,6 +602,13 @@ canvas{max-width:100%}
     </div>
     <div class="gate-title">Enter your License Key to continue</div>
     <div class="gate-sub">Your license key was provided by your software administrator. Contact support if you don't have one.</div>
+
+    <!-- Firebase connection status pill -->
+    <div id="fb-status" style="display:flex;align-items:center;gap:7px;padding:7px 12px;border-radius:8px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);margin-bottom:14px;font-size:11px;color:#f59e0b">
+      <div style="width:8px;height:8px;border-radius:50%;background:#f59e0b;animation:pulse 1.2s infinite"></div>
+      <span id="fb-status-text">Connecting to license server…</span>
+    </div>
+
     <div class="gate-format-hint">Format: <code>MSA-XXXX-XXXX-XXXX</code></div>
     <div class="gate-input-wrap">
       <input class="gate-input" id="license-key-input" type="text"
@@ -1015,13 +1022,6 @@ canvas{max-width:100%}
           <p>Download all analysis charts as individual PNG image files</p>
         </div>
       </div>
-      <div class="save-opt" id="opt-pdf" onclick="selectSaveOpt('pdf')">
-        <div class="save-icon" style="background:rgba(239,68,68,.15)">📑</div>
-        <div class="save-opt-info">
-          <h4>Download as PDF</h4>
-          <p>Generate a full MSA report PDF with charts, tables &amp; KPIs embedded</p>
-        </div>
-      </div>
       <div class="save-opt" id="opt-print" onclick="selectSaveOpt('print')">
         <div class="save-icon" style="background:rgba(245,158,11,.15)">🖨️</div>
         <div class="save-opt-info">
@@ -1180,8 +1180,6 @@ canvas{max-width:100%}
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -1209,46 +1207,67 @@ function formatKeyInput(el){
 }
 
 async function activateLicense(){
-  const key=document.getElementById('license-key-input').value.trim();
-  const btn=document.getElementById('activate-btn');
-  const errEl=document.getElementById('gate-error');
-  const errMsg=document.getElementById('gate-error-msg');
+  const key    = document.getElementById('license-key-input').value.trim();
+  const btn    = document.getElementById('activate-btn');
+  const errEl  = document.getElementById('gate-error');
 
-  if(!key){showGateError('Please enter your license key.');return;}
-  if(!window.__msaFirebaseReady){showGateError('Connecting to server... please wait.');return;}
+  if(!key){ showGateError('Please enter your license key.'); return; }
 
-  btn.classList.add('loading');btn.disabled=true;
+  btn.classList.add('loading'); btn.disabled = true;
   errEl.classList.remove('show');
 
+  // ── Wait for Firebase to be ready (max 12 seconds) ──
+  if(!window.__msaFirebaseReady){
+    const label = btn.querySelector('.btn-label');
+    if(label) label.textContent = 'Connecting…';
+    const ready = await new Promise(resolve => {
+      // Already ready?
+      if(window.__msaFirebaseReady){ resolve(true); return; }
+      let done = false;
+      const onReady = () => { if(!done){ done=true; resolve(true); } };
+      document.addEventListener('firebase-ready', onReady, { once: true });
+      // Timeout fallback after 12 seconds
+      setTimeout(() => { if(!done){ done=true; resolve(false); } }, 12000);
+    });
+    if(label) label.textContent = 'Activate License';
+    if(!ready){
+      btn.classList.remove('loading'); btn.disabled = false;
+      showGateError('Cannot connect to the server. Please check your internet connection and refresh the page.');
+      return;
+    }
+  }
+
   try{
-    const result=await window.__msaValidate(key);
+    const result = await window.__msaValidate(key);
     if(result.valid){
       const expDate = result.data.expiryDate instanceof Date
         ? result.data.expiryDate
         : (result.data.expiryDate?.seconds ? new Date(result.data.expiryDate.seconds*1000) : new Date(result.data.expiryDate));
-      currentLicense={key,...result.data};
-      // Store in localStorage (persists across sessions)
-      localStorage.setItem(SESSION_KEY,JSON.stringify({
-        key,company:result.data.company,customerName:result.data.customerName,
-        expiryDate: expDate instanceof Date && !isNaN(expDate) ? expDate.toISOString() : null,
-        readOnly:result.readOnly,
-        ts:Date.now()
+      currentLicense = { key, ...result.data };
+      localStorage.setItem(SESSION_KEY, JSON.stringify({
+        key,
+        company:      result.data.company,
+        customerName: result.data.customerName,
+        expiryDate:   expDate instanceof Date && !isNaN(expDate) ? expDate.toISOString() : null,
+        readOnly:     result.readOnly,
+        ts:           Date.now()
       }));
-      unlockApp(result.readOnly,result.data);
+      unlockApp(result.readOnly, result.data);
     } else {
-      const msgs={
-        INVALID_KEY:'License key not found. Please check and try again.',
-        REVOKED:'This license has been revoked. Contact your administrator.',
-        OFFLINE:'Cannot connect to license server. An internet connection is required.',
-        NO_KEY:'Please enter your license key.',
-        ERROR:'Verification error. Please try again.'
+      const msgs = {
+        INVALID_KEY: 'License key not found. Please check and try again.',
+        REVOKED:     'This license has been revoked. Contact your administrator.',
+        OFFLINE:     'Cannot connect to the license server. Check your internet connection.',
+        PERMISSION:  'Server permission error — please contact support.',
+        NO_KEY:      'Please enter your license key.',
+        ERROR:       'Verification error. Please try again.'
       };
-      showGateError(msgs[result.reason]||'License validation failed.');
+      showGateError((msgs[result.reason] || 'License validation failed.') + (result.message ? ' (' + result.message + ')' : ''));
     }
   } catch(e){
-    showGateError('Connection error. Please check your internet and try again.');
+    showGateError('Connection error: ' + (e.message || 'Unknown error') + '. Please check your internet and try again.');
   } finally{
-    btn.classList.remove('loading');btn.disabled=false;
+    btn.classList.remove('loading'); btn.disabled = false;
   }
 }
 
@@ -1322,26 +1341,63 @@ function showLicenseInfo(){
 
 // Check session on load
 document.addEventListener('DOMContentLoaded',()=>{
-  // Wait for Firebase to be ready, then check session
-  const checkSession=()=>{
-    const sess=localStorage.getItem(SESSION_KEY);
-    if(sess){
-      try{
-        const s=JSON.parse(sess);
-        // Re-validate against Firestore on every load
-        let sessionChecked=false;
-        const tryRevalidate=(key)=>{if(sessionChecked)return;sessionChecked=true;revalidateSession(key);};
-        if(window.__msaFirebaseReady){
-          tryRevalidate(s.key);
-        } else {
-          document.addEventListener('firebase-ready',()=>tryRevalidate(s.key),{once:true});
-        }
-      } catch(e){localStorage.removeItem(SESSION_KEY);}
+  document.getElementById('f-date').value    = new Date().toISOString().split('T')[0];
+  document.getElementById('f-studyno').value = 'MSA-'+new Date().getFullYear()+'-001';
+
+  // ── Update Firebase status pill ──────────────────────
+  function setFbStatus(ok, msg) {
+    var pill = document.getElementById('fb-status');
+    var dot  = pill ? pill.querySelector('div') : null;
+    var txt  = document.getElementById('fb-status-text');
+    if (!pill) return;
+    if (ok) {
+      pill.style.background = 'rgba(52,211,153,0.1)';
+      pill.style.borderColor = 'rgba(52,211,153,0.3)';
+      pill.style.color = '#34d399';
+      if (dot) { dot.style.background='#34d399'; dot.style.animation='none'; }
+      if (txt) txt.textContent = msg || 'Server connected — ready to activate';
+    } else {
+      pill.style.background = 'rgba(239,68,68,0.1)';
+      pill.style.borderColor = 'rgba(239,68,68,0.3)';
+      pill.style.color = '#ef4444';
+      if (dot) { dot.style.background='#ef4444'; dot.style.animation='none'; }
+      if (txt) txt.textContent = msg || 'Cannot connect to server';
     }
-  };
-  checkSession();
-  document.getElementById('f-date').value=new Date().toISOString().split('T')[0];
-  document.getElementById('f-studyno').value='MSA-'+new Date().getFullYear()+'-001';
+  }
+
+  // Listen for firebase-ready event
+  document.addEventListener('firebase-ready', function(e) {
+    var authOk = e.detail && e.detail.authOk;
+    setFbStatus(true, authOk ? 'Server connected — ready to activate' : 'Server connected (limited auth)');
+
+    // Try to restore session
+    const sess = localStorage.getItem(SESSION_KEY);
+    if (sess) {
+      try {
+        const s = JSON.parse(sess);
+        revalidateSession(s.key);
+      } catch(err) { localStorage.removeItem(SESSION_KEY); }
+    }
+  }, { once: true });
+
+  // If already ready when DOM loads (module ran before DOMContentLoaded)
+  if (window.__msaFirebaseReady) {
+    setFbStatus(true, 'Server connected — ready to activate');
+    const sess = localStorage.getItem(SESSION_KEY);
+    if (sess) {
+      try {
+        const s = JSON.parse(sess);
+        revalidateSession(s.key);
+      } catch(err) { localStorage.removeItem(SESSION_KEY); }
+    }
+  }
+
+  // Timeout: if Firebase never becomes ready in 15s, show error
+  setTimeout(function() {
+    if (!window.__msaFirebaseReady) {
+      setFbStatus(false, 'Cannot reach server. Check internet & refresh.');
+    }
+  }, 15000);
 });
 
 async function revalidateSession(key){
@@ -1768,17 +1824,13 @@ function selectSaveOpt(type){
   document.querySelectorAll('.save-opt').forEach(o=>o.classList.remove('selected'));
   document.getElementById('opt-'+type).classList.add('selected');
   document.getElementById('print-options-panel').style.display = type==='print'?'block':'none';
-  document.getElementById('save-execute-btn').textContent =
-    type==='print'  ? '🖨️ Print'       :
-    type==='charts' ? '🖼️ Save Charts'  :
-    type==='pdf'    ? '📑 Download PDF' : 'Download';
+  document.getElementById('save-execute-btn').textContent = type==='print' ? '🖨️ Print' : type==='charts' ? '🖼️ Save Charts' : 'Download';
 }
 
 function executeSave(){
   if(selectedSaveOpt==='json'){ saveStudyJSON(); closeSaveModal(); }
   else if(selectedSaveOpt==='csv'){ exportCSV(); closeSaveModal(); }
   else if(selectedSaveOpt==='charts'){ exportChartsAsPNG(); closeSaveModal(); }
-  else if(selectedSaveOpt==='pdf'){ closeSaveModal(); setTimeout(exportAsPDF, 80); }
   else if(selectedSaveOpt==='print'){ closeSaveModal(); setTimeout(executePrint, 80); }
 }
 
@@ -1817,276 +1869,6 @@ function exportChartsAsPNG(){
   });
   if (saved > 0) notify('Saved ' + saved + ' chart(s) as PNG.', 'ok');
   else notify('No charts available to save. Run an analysis first.', 'err');
-}
-
-
-// ═══════════════════════════════════════════════════════
-//  EXPORT AS PDF  (jsPDF + html2canvas)
-// ═══════════════════════════════════════════════════════
-async function exportAsPDF() {
-  if (typeof window.jspdf === 'undefined' || typeof window.html2canvas === 'undefined') {
-    notify('PDF libraries not loaded yet — please wait and try again.', 'err');
-    return;
-  }
-  notify('Generating PDF\u2026 please wait.', 'info');
-  const { jsPDF } = window.jspdf;
-
-  var meta = {
-    company:  document.getElementById('f-company').value   || '\u2014',
-    customer: document.getElementById('f-customer').value  || '\u2014',
-    studyNo:  document.getElementById('f-studyno').value   || '\u2014',
-    date:     document.getElementById('f-date').value      || '\u2014',
-    partName: document.getElementById('f-partname').value  || '\u2014',
-    partNo:   document.getElementById('f-partno').value    || '\u2014',
-    charName: document.getElementById('f-char').value      || '\u2014',
-    gauge:    document.getElementById('f-gauge').value     || '\u2014',
-    gaugeNo:  document.getElementById('f-gaugeno').value   || '\u2014',
-    prepBy:   document.getElementById('f-prepby').value    || '\u2014',
-    usl:      document.getElementById('f-usl').value       || '\u2014',
-    lsl:      document.getElementById('f-lsl').value       || '\u2014',
-  };
-
-  var doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  var pageW = doc.internal.pageSize.getWidth();
-  var pageH = doc.internal.pageSize.getHeight();
-  var margin = 12;
-  var contentW = pageW - margin * 2;
-  var y = margin;
-
-  function checkNewPage(needed) {
-    if (y + needed > pageH - margin) { doc.addPage(); y = margin; drawPageBorder(); }
-  }
-  function drawPageBorder() {
-    doc.setDrawColor(79,156,249); doc.setLineWidth(0.4);
-    doc.rect(8,8,pageW-16,pageH-16);
-  }
-  function sectionHeader(title) {
-    checkNewPage(12);
-    doc.setFillColor(30,37,53);
-    doc.roundedRect(margin,y,contentW,8,1.5,1.5,'F');
-    doc.setTextColor(232,237,248); doc.setFontSize(9); doc.setFont('helvetica','bold');
-    doc.text(title, margin+3, y+5.5);
-    doc.setTextColor(30,37,53); y += 11;
-  }
-  function addKPIText(kpiId) {
-    var el = document.getElementById(kpiId);
-    if (!el) return;
-    var kpis = el.querySelectorAll('.kpi');
-    if (!kpis.length) return;
-    checkNewPage(18);
-    var colW = contentW / Math.min(kpis.length,5);
-    kpis.forEach(function(kpi,i) {
-      var col = i % 5;
-      if (i > 0 && col === 0) { y += 16; checkNewPage(18); }
-      var xPos = margin + col * colW;
-      var lbl = kpi.querySelector('.kpi-l')?.textContent || '';
-      var val = kpi.querySelector('.kpi-v')?.textContent || '';
-      var sub = kpi.querySelector('.kpi-s')?.textContent || '';
-      doc.setDrawColor(45,54,80); doc.setFillColor(23,28,38);
-      doc.roundedRect(xPos,y,colW-2,14,1,1,'FD');
-      doc.setFontSize(6.5); doc.setFont('helvetica','normal'); doc.setTextColor(90,106,144);
-      doc.text(lbl, xPos+2, y+4);
-      doc.setFontSize(9); doc.setFont('helvetica','bold'); doc.setTextColor(232,237,248);
-      doc.text(val, xPos+2, y+9.5);
-      doc.setFontSize(6); doc.setFont('helvetica','normal'); doc.setTextColor(90,106,144);
-      doc.text(sub, xPos+2, y+13);
-    });
-    y += 16;
-  }
-  async function addChartImage(canvasId, label, fullW) {
-    var cv = document.getElementById(canvasId);
-    if (!cv || cv.width === 0 || cv.height === 0) return;
-    try {
-      var imgData = cv.toDataURL('image/png',1.0);
-      var ratio = cv.height / cv.width;
-      var imgW  = fullW ? contentW : contentW/2 - 2;
-      var imgH  = Math.min(imgW * ratio, 65);
-      checkNewPage(imgH + 8);
-      if (label) {
-        doc.setFontSize(7.5); doc.setFont('helvetica','bold'); doc.setTextColor(90,106,144);
-        doc.text(label, margin, y+4); y += 5;
-      }
-      doc.addImage(imgData,'PNG',margin,y,imgW,imgH);
-      y += imgH + 4;
-    } catch(e) {}
-  }
-  async function addChartPair(id1,lbl1,id2,lbl2) {
-    var cv1 = document.getElementById(id1);
-    var cv2 = document.getElementById(id2);
-    var has1 = cv1 && cv1.width > 0;
-    var has2 = cv2 && cv2.width > 0;
-    if (!has1 && !has2) return;
-    if (!has2) { await addChartImage(id1,lbl1,true); return; }
-    if (!has1) { await addChartImage(id2,lbl2,true); return; }
-    var half = contentW/2 - 2;
-    var h = Math.min(Math.max(half*(cv1.height/cv1.width), half*(cv2.height/cv2.width)), 55);
-    checkNewPage(h+8);
-    doc.setFontSize(7.5); doc.setFont('helvetica','bold'); doc.setTextColor(90,106,144);
-    if (lbl1) doc.text(lbl1, margin, y+4);
-    if (lbl2) doc.text(lbl2, margin+half+4, y+4);
-    y += 5;
-    doc.addImage(cv1.toDataURL('image/png',1),'PNG',margin,y,half,h);
-    doc.addImage(cv2.toDataURL('image/png',1),'PNG',margin+half+4,y,half,h);
-    y += h + 4;
-  }
-  async function addHTMLTable(tableId, label) {
-    var el = document.getElementById(tableId);
-    if (!el || !el.innerHTML.trim()) return;
-    try {
-      var subPanel = el.closest('.sub-panel');
-      var prevDisplay = subPanel ? subPanel.style.display : null;
-      if (subPanel && subPanel.style.display === 'none') subPanel.style.display = 'block';
-      var canvas = await html2canvas(el, {
-        scale:2, backgroundColor:'#1e2535', useCORS:true, logging:false,
-        width:el.scrollWidth, height:el.scrollHeight
-      });
-      if (subPanel && prevDisplay !== null) subPanel.style.display = prevDisplay;
-      var imgData = canvas.toDataURL('image/png',1.0);
-      var ratio = canvas.height / canvas.width;
-      var imgW = contentW;
-      var imgH = Math.min(imgW * ratio, 80);
-      checkNewPage(imgH+8);
-      if (label) {
-        doc.setFontSize(7.5); doc.setFont('helvetica','bold'); doc.setTextColor(90,106,144);
-        doc.text(label, margin, y+4); y += 5;
-      }
-      doc.addImage(imgData,'PNG',margin,y,imgW,imgH);
-      y += imgH + 4;
-    } catch(e) {}
-  }
-  function addVerdictBanner(elId, color, prefix) {
-    var el = document.getElementById(elId);
-    if (!el || !el.textContent.trim()) return;
-    checkNewPage(12);
-    var rgb = color === 'green' ? [52,211,153] : color === 'amber' ? [245,158,11] : color === 'purple' ? [167,139,250] : [79,156,249];
-    doc.setFillColor(23,28,38); doc.setDrawColor(rgb[0],rgb[1],rgb[2]); doc.setLineWidth(0.5);
-    doc.roundedRect(margin,y,contentW,9,2,2,'FD');
-    doc.setFontSize(8.5); doc.setFont('helvetica','bold'); doc.setTextColor(rgb[0],rgb[1],rgb[2]);
-    doc.text((prefix?prefix+': ':'') + el.textContent.replace(/[\u{1F000}-\u{FFFF}]/gu,'').trim(), margin+3, y+6);
-    y += 12;
-  }
-
-  // ── PAGE 1: COVER ──────────────────────────────────────
-  drawPageBorder();
-  doc.setFillColor(15,17,23); doc.rect(0,0,pageW,42,'F');
-  doc.setFillColor(79,156,249); doc.circle(margin+7,21,7,'F');
-  doc.setTextColor(255,255,255); doc.setFontSize(7); doc.setFont('helvetica','bold');
-  doc.text('MSA', margin+3.5, 23.5);
-  doc.setFontSize(15); doc.setFont('helvetica','bold'); doc.setTextColor(232,237,248);
-  doc.text('MSA Suite \u2014 Measurement System Analysis Report', margin+18, 18);
-  doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(88,106,144);
-  doc.text('Gauge R&R  \u00b7  Bias & Linearity  \u00b7  Stability  \u00b7  Attribute MSA', margin+18, 26);
-  doc.setFontSize(7);
-  doc.text('Generated: ' + new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}), margin+18, 33);
-  y = 50;
-
-  sectionHeader('STUDY INFORMATION');
-  var infoRows = [
-    ['Company / Plant:', meta.company,   'Customer:',    meta.customer],
-    ['Study No.:',       meta.studyNo,   'Study Date:',  meta.date],
-    ['Part Name:',       meta.partName,  'Part No.:',    meta.partNo],
-    ['Characteristic:',  meta.charName,  'Gauge:',       meta.gauge+(meta.gaugeNo?' #'+meta.gaugeNo:'')],
-    ['USL / LSL:',       meta.usl+' / '+meta.lsl, 'Prepared By:', meta.prepBy],
-  ];
-  var rowH = 7;
-  infoRows.forEach(function(row) {
-    checkNewPage(rowH+1);
-    doc.setFillColor(30,37,53); doc.rect(margin,y,contentW,rowH,'F');
-    doc.setDrawColor(45,54,80); doc.setLineWidth(0.2); doc.rect(margin,y,contentW,rowH);
-    doc.line(margin+contentW*0.5, y, margin+contentW*0.5, y+rowH);
-    doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(90,106,144);
-    doc.text(row[0], margin+2, y+rowH*0.65);
-    doc.setFont('helvetica','normal'); doc.setTextColor(232,237,248);
-    doc.text(String(row[1]), margin+32, y+rowH*0.65);
-    doc.setFont('helvetica','bold'); doc.setTextColor(90,106,144);
-    doc.text(row[2], margin+contentW*0.5+2, y+rowH*0.65);
-    doc.setFont('helvetica','normal'); doc.setTextColor(232,237,248);
-    doc.text(String(row[3]), margin+contentW*0.5+32, y+rowH*0.65);
-    y += rowH;
-  });
-  y += 6;
-
-  var hasGRR=!!grrData, hasBias=!!biasData, hasStab=!!stabData, hasAttr=!!attrData;
-  if (!hasGRR && !hasBias && !hasStab && !hasAttr) {
-    checkNewPage(20);
-    doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(239,68,68);
-    doc.text('No analysis data. Please run an analysis first.', margin, y+10);
-    doc.save(('MSA-Study_no-data.pdf'));
-    notify('PDF saved (no analysis data).','ok'); return;
-  }
-
-  // ── GRR ──────────────────────────────────────────────
-  if (hasGRR) {
-    doc.addPage(); y=margin; drawPageBorder();
-    sectionHeader('GAUGE R&R ANALYSIS (ANOVA)');
-    addKPIText('anova-kpi'); y+=2;
-    await addHTMLTable('anova-table','ANOVA Table');
-    await addHTMLTable('anova-summary-table','Variance Components Summary');
-    sectionHeader('Averages & Ranges Method');
-    addKPIText('avgr-kpi'); y+=2;
-    await addHTMLTable('avgr-table','Avg & Range Results');
-    await addHTMLTable('avgr-summary-table','Study Summary');
-    sectionHeader('Gauge R&R Charts');
-    await addChartPair('ch-xbar','X-bar Chart','ch-r','R Chart');
-    await addChartPair('ch-bypart','Meas. by Part','ch-opbox','Operator Comparison');
-    await addChartPair('ch-interact','Part x Op Interaction','ch-run','Run Chart');
-    sectionHeader('Variance Contribution');
-    addKPIText('var-kpi'); y+=2;
-    await addHTMLTable('vc-table','Variance Components');
-    await addChartPair('ch-vc-bar','Study Variation %','ch-vc-pie','Contribution Pie');
-    addVerdictBanner('anova-verdict','green','GRR VERDICT');
-  }
-
-  // ── BIAS & LINEARITY ──────────────────────────────────
-  if (hasBias) {
-    doc.addPage(); y=margin; drawPageBorder();
-    sectionHeader('BIAS ANALYSIS');
-    addKPIText('bias-kpi'); y+=2;
-    await addHTMLTable('bias-table','Bias Table');
-    await addChartPair('ch-bias-hist','Bias Histogram','ch-bias-run','Bias Run Chart');
-    addVerdictBanner('bias-verdict','amber','BIAS VERDICT');
-    sectionHeader('LINEARITY ANALYSIS');
-    addKPIText('linearity-kpi'); y+=2;
-    await addHTMLTable('linearity-table','Linearity Results');
-    await addChartImage('ch-linearity','Linearity Plot',true);
-    addVerdictBanner('linearity-verdict','blue','LINEARITY VERDICT');
-  }
-
-  // ── STABILITY ─────────────────────────────────────────
-  if (hasStab) {
-    doc.addPage(); y=margin; drawPageBorder();
-    sectionHeader('STABILITY ANALYSIS');
-    addKPIText('stab-kpi'); y+=2;
-    await addHTMLTable('stab-table','Stability Table');
-    await addChartPair('ch-stab-xbar','X-bar Control Chart','ch-stab-r','R Control Chart');
-    await addChartImage('ch-stab-run','Individual Measurements Run Chart',true);
-    addVerdictBanner('stab-verdict','green','STABILITY VERDICT');
-  }
-
-  // ── ATTRIBUTE ─────────────────────────────────────────
-  if (hasAttr) {
-    doc.addPage(); y=margin; drawPageBorder();
-    sectionHeader('ATTRIBUTE MSA');
-    addKPIText('attr-kpi'); y+=2;
-    await addHTMLTable('attr-kappa-table','Kappa by Operator');
-    await addHTMLTable('attr-agree-table','Agreement Matrix');
-    await addChartPair('ch-attr-agree','% Agreement','ch-attr-kappa','Kappa Values');
-    addVerdictBanner('attr-verdict','purple','ATTRIBUTE VERDICT');
-  }
-
-  // ── FOOTERS ───────────────────────────────────────────
-  var totalPages = doc.internal.getNumberOfPages();
-  for (var pg=1; pg<=totalPages; pg++) {
-    doc.setPage(pg);
-    doc.setFillColor(15,17,23); doc.rect(0,pageH-10,pageW,10,'F');
-    doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(90,106,144);
-    doc.text('MSA Suite  |  '+meta.company+'  |  Study: '+meta.studyNo+'  |  '+meta.date, margin, pageH-4);
-    doc.text('Page '+pg+' of '+totalPages, pageW-margin, pageH-4, {align:'right'});
-  }
-
-  var fname = ((meta.studyNo||'MSA-Study')+'_'+(meta.date||new Date().toISOString().slice(0,10))+'.pdf').replace(/[^a-z0-9_\-.]/gi,'_');
-  doc.save(fname);
-  notify('PDF downloaded: '+fname,'ok');
 }
 
 function saveStudyJSON(){
