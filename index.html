@@ -535,6 +535,20 @@ canvas{max-width:100%}
   .print-header { display:block!important }
   @page { size:A3 landscape; margin:12mm }
 
+  /* ── Prevent canvas/chart collapse during print ── */
+  canvas { display:block!important; max-width:100%!important; }
+  .chart-wrap, .chart-wrap-full {
+    display:block!important;
+    overflow:visible!important;
+    min-height:200px!important;
+    page-break-inside:avoid!important;
+    break-inside:avoid!important;
+  }
+  .chart-grid-2, .chart-grid-3 {
+    display:grid!important;
+    overflow:visible!important;
+  }
+
   /* ── Checkbox-driven print exclusions ── */
   body.no-print-header   #print-header                                         { display:none!important }
   body.no-print-kpi      .kpi-grid, body.no-print-kpi .kpi                     { display:none!important }
@@ -1864,13 +1878,30 @@ function executePrint(){
     }
   });
 
-  // 4. Redraw all charts now that their containers are visible (canvases were zero-size when hidden)
+  // 4. Disable Chart.js animations so charts render instantly (no mid-animation blank frames)
+  Chart.defaults.animation = false;
+
+  // 4b. Force all canvas elements to have explicit pixel dimensions before redraw
+  //     (canvases inside hidden panels have 0x0 size; we must set them explicitly)
+  document.querySelectorAll('canvas').forEach(function(cv) {
+    var parent = cv.parentElement;
+    if (parent) {
+      var w = parent.offsetWidth || 400;
+      var h = cv.getAttribute('height') || 220;
+      cv.style.width  = w + 'px';
+      cv.style.height = h + 'px';
+      cv.width  = w;
+      cv.height = parseInt(h);
+    }
+  });
+
+  // 4c. Redraw all charts now that containers are visible and canvas sizes are correct
   if(grrData){ redrawGRRCharts(); }
   if(biasData){ redrawBiasCharts(); }
   if(stabData){ redrawStabCharts(); }
   if(attrData){ redrawAttrCharts(); }
 
-  // 5. Resize any remaining charts and wait for Chart.js to fully re-render, then print and restore
+  // 5. Resize all charts, wait longer for full render, then print and restore
   setTimeout(function() {
     Object.values(charts).forEach(function(c) { try { c.resize(); } catch(e) {} });
 
@@ -1884,10 +1915,11 @@ function executePrint(){
       body: body
     };
 
+    // Wait 800ms (up from 300ms) so Chart.js fully paints all charts before browser snapshots the page
     setTimeout(function() {
       window.print();
-    }, 300);
-  }, 50);
+    }, 800);
+  }, 100);
 }
 
 // ── PRINT EVENT HANDLERS (mirrors SPC pattern) ──
@@ -1902,6 +1934,12 @@ window.onafterprint = function() {
   Object.values(rd.checks).forEach(function(cls) { rd.body.classList.remove(cls); });
   rd.body.classList.remove('no-print-modules');
   window._printRestoreData = null;
+  // Re-enable animations and redraw active charts at correct size
+  Chart.defaults.animation = { duration: 400 };
+  if(grrData){ redrawGRRCharts(); }
+  if(biasData){ redrawBiasCharts(); }
+  if(stabData){ redrawStabCharts(); }
+  if(attrData){ redrawAttrCharts(); }
 };
 
 // ═══════════════════════════════════════════════════════
