@@ -514,6 +514,12 @@ canvas{max-width:100%}
   .print-header{display:block!important}
   @page{size:A3 landscape;margin:12mm}
 
+  /* ── Force all result content divs visible, hide all empty states ── */
+  #grr-anova-content,#grr-avgr-content,#grr-charts-content,#grr-var-content,
+  #bias-content,#linearity-content,#stab-content,#attr-content { display:block!important }
+  #grr-anova-empty,#grr-avgr-empty,#grr-charts-empty,#grr-var-empty,
+  #bias-empty,#linearity-empty,#stab-empty,#attr-empty { display:none!important }
+
   /* ── Checkbox-driven print exclusions ── */
   body.no-print-header   #print-header                        { display:none!important }
   body.no-print-kpi      .kpi-grid, body.no-print-kpi .kpi    { display:none!important }
@@ -1821,7 +1827,15 @@ function executePrint(){
   var hiddenContents = [];
   contentDivIds.forEach(function(id) {
     var el = document.getElementById(id);
-    if (el && el.style.display === 'none') { hiddenContents.push(el); el.style.display = ''; }
+    if (el && el.style.display === 'none') { hiddenContents.push(el); el.style.display = 'block'; }
+  });
+  // Hide all empty-state placeholder divs during print
+  var emptyDivIds = ['grr-anova-empty','grr-avgr-empty','grr-charts-empty','grr-var-empty',
+                     'bias-empty','linearity-empty','stab-empty','attr-empty'];
+  var shownEmpties = [];
+  emptyDivIds.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el && el.style.display !== 'none') { shownEmpties.push(el); el.style.display = 'none'; }
   });
 
   // 4. Redraw all charts now that their containers are visible (canvases were zero-size when hidden)
@@ -1839,6 +1853,7 @@ function executePrint(){
       hiddenModules.forEach(function(p) { p.classList.remove('active'); });
       hiddenPanels.forEach(function(p) { p.classList.remove('active'); });
       hiddenContents.forEach(function(el) { el.style.display = 'none'; });
+      shownEmpties.forEach(function(el) { el.style.display = ''; });
       Object.values(checks).forEach(function(cls) { body.classList.remove(cls); });
       body.classList.remove('no-print-modules');
     }, 300);
