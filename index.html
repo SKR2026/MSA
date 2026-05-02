@@ -78,6 +78,7 @@
 
       const data = snap.data();
       if (data._deleted) return { valid: false, reason: 'INVALID_KEY' };
+      if (data.product && data.product !== 'MSA') return { valid: false, reason: 'WRONG_PRODUCT', message: 'This license key is not valid for MSA Suite.' };
       if (!data.isActive) return { valid: false, reason: 'REVOKED', data };
 
       const now    = new Date();
@@ -1255,12 +1256,13 @@ async function activateLicense(){
       unlockApp(result.readOnly, result.data);
     } else {
       const msgs = {
-        INVALID_KEY: 'License key not found. Please check and try again.',
-        REVOKED:     'This license has been revoked. Contact your administrator.',
-        OFFLINE:     'Cannot connect to the license server. Check your internet connection.',
-        PERMISSION:  'Server permission error — please contact support.',
-        NO_KEY:      'Please enter your license key.',
-        ERROR:       'Verification error. Please try again.'
+        INVALID_KEY:   'License key not found. Please check and try again.',
+        WRONG_PRODUCT: 'This license key is not valid for MSA Suite.',
+        REVOKED:       'This license has been revoked. Contact your administrator.',
+        OFFLINE:       'Cannot connect to the license server. Check your internet connection.',
+        PERMISSION:    'Server permission error — please contact support.',
+        NO_KEY:        'Please enter your license key.',
+        ERROR:         'Verification error. Please try again.'
       };
       showGateError((msgs[result.reason] || 'License validation failed.') + (result.message ? ' (' + result.message + ')' : ''));
     }
