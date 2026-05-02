@@ -1008,6 +1008,13 @@ canvas{max-width:100%}
           <p>Export the current measurement data for use in other tools</p>
         </div>
       </div>
+      <div class="save-opt" id="opt-charts" onclick="selectSaveOpt('charts')">
+        <div class="save-icon" style="background:rgba(167,139,250,.15)">🖼️</div>
+        <div class="save-opt-info">
+          <h4>Save Charts as PNG</h4>
+          <p>Download all analysis charts as individual PNG image files</p>
+        </div>
+      </div>
       <div class="save-opt" id="opt-print" onclick="selectSaveOpt('print')">
         <div class="save-icon" style="background:rgba(245,158,11,.15)">🖨️</div>
         <div class="save-opt-info">
@@ -1752,16 +1759,88 @@ function selectSaveOpt(type){
   document.querySelectorAll('.save-opt').forEach(o=>o.classList.remove('selected'));
   document.getElementById('opt-'+type).classList.add('selected');
   document.getElementById('print-options-panel').style.display = type==='print'?'block':'none';
-  document.getElementById('save-execute-btn').textContent = type==='print' ? '🖨️ Print' : 'Download';
+  document.getElementById('save-execute-btn').textContent = type==='print' ? '🖨️ Print' : type==='charts' ? '🖼️ Save Charts' : 'Download';
 }
 
 function executeSave(){
   if(selectedSaveOpt==='json'){ saveStudyJSON(); closeSaveModal(); }
   else if(selectedSaveOpt==='csv'){ exportCSV(); closeSaveModal(); }
+  else if(selectedSaveOpt==='charts'){ exportChartsAsPNG(); closeSaveModal(); }
   else if(selectedSaveOpt==='print'){ closeSaveModal(); setTimeout(executePrint, 80); }
 }
 
+function exportChartsAsPNG(){
+  var chartMeta = [
+    { id:'ch-xbar',       name:'GRR_Xbar_Chart' },
+    { id:'ch-r',          name:'GRR_R_Chart' },
+    { id:'ch-bypart',     name:'GRR_Measurements_by_Part' },
+    { id:'ch-opbox',      name:'GRR_Operator_Comparison' },
+    { id:'ch-interact',   name:'GRR_Part_Op_Interaction' },
+    { id:'ch-run',        name:'GRR_Run_Chart' },
+    { id:'ch-vc-bar',     name:'GRR_Study_Variation_Bar' },
+    { id:'ch-vc-pie',     name:'GRR_Contribution_Pie' },
+    { id:'ch-bias-hist',  name:'Bias_Histogram' },
+    { id:'ch-bias-run',   name:'Bias_Run_Chart' },
+    { id:'ch-linearity',  name:'Linearity_Plot' },
+    { id:'ch-stab-xbar',  name:'Stability_Xbar' },
+    { id:'ch-stab-r',     name:'Stability_R' },
+    { id:'ch-stab-run',   name:'Stability_Run' },
+    { id:'ch-attr-agree', name:'Attribute_Agreement' },
+    { id:'ch-attr-kappa', name:'Attribute_Kappa' }
+  ];
+  var saved = 0;
+  var studyNo = (document.getElementById('f-studyno').value || 'MSA').replace(/[^a-z0-9_\-]/gi,'_');
+  chartMeta.forEach(function(cm) {
+    var cv = document.getElementById(cm.id);
+    if (!cv || cv.width === 0 || cv.height === 0) return;
+    try {
+      var url = cv.toDataURL('image/png');
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = studyNo + '_' + cm.name + '.png';
+      a.click();
+      saved++;
+    } catch(e) {}
+  });
+  if (saved > 0) notify('Saved ' + saved + ' chart(s) as PNG.', 'ok');
+  else notify('No charts available to save. Run an analysis first.', 'err');
+}
+
 function saveStudyJSON(){
+  // Capture chart images as base64 PNG (only charts that exist and have been drawn)
+  var chartImages = {};
+  var chartIds = [
+    'ch-xbar','ch-r','ch-bypart','ch-opbox','ch-interact','ch-run','ch-vc-bar','ch-vc-pie',
+    'ch-bias-hist','ch-bias-run','ch-linearity',
+    'ch-stab-xbar','ch-stab-r','ch-stab-run',
+    'ch-attr-agree','ch-attr-kappa'
+  ];
+  chartIds.forEach(function(id) {
+    var cv = document.getElementById(id);
+    if (cv && cv.width > 0 && cv.height > 0) {
+      try { chartImages[id] = cv.toDataURL('image/png'); } catch(e) {}
+    }
+  });
+
+  // Capture result tables HTML
+  var resultTables = {};
+  var tableIds = [
+    'anova-table','anova-summary-table','avgr-table','avgr-op-table','avgr-summary-table','vc-table',
+    'bias-table','linearity-table','stab-table',
+    'attr-kappa-table','attr-agree-table'
+  ];
+  tableIds.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) resultTables[id] = el.outerHTML;
+  });
+
+  // Capture KPI HTML
+  var kpiHTML = {};
+  ['anova-kpi','avgr-kpi','var-kpi','bias-kpi','linearity-kpi','stab-kpi','attr-kpi'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) kpiHTML[id] = el.innerHTML;
+  });
+
   const study = {
     meta: {
       company: document.getElementById('f-company').value,
@@ -1789,8 +1868,13 @@ function saveStudyJSON(){
       stability: document.getElementById('stab-input')?.value || '',
       attribute: document.getElementById('attr-input')?.value || '',
     },
+    results: {
+      tables: resultTables,
+      kpi: kpiHTML,
+      charts: chartImages
+    },
     savedAt: new Date().toISOString(),
-    version: '1.0'
+    version: '1.1'
   };
   const blob = new Blob([JSON.stringify(study, null, 2)], {type:'application/json'});
   const a = document.createElement('a');
@@ -1912,7 +1996,7 @@ function executePrint(){
     if (shouldPrint) {
       // Make the module panel visible
       if (!modEl.classList.contains('active')) {
-        hiddenModules.push(modEl);
+        hiddenModules.push({ el: modEl, wasActive: false });
         modEl.classList.add('active');
       }
 
@@ -1958,8 +2042,6 @@ function executePrint(){
       if (modEl.classList.contains('active')) {
         hiddenModules.push({ el: modEl, wasActive: true });
         modEl.classList.remove('active');
-      } else {
-        // already hidden, just ensure it stays hidden
       }
     }
   });
@@ -1967,46 +2049,54 @@ function executePrint(){
   // 4. Disable Chart.js animations so charts render instantly (no mid-animation blank frames)
   Chart.defaults.animation = false;
 
-  // 4b. Force all canvas elements to have explicit pixel dimensions before redraw
-  //     (canvases inside hidden panels have 0x0 size; we must set them explicitly)
-  document.querySelectorAll('canvas').forEach(function(cv) {
-    var parent = cv.parentElement;
-    if (parent) {
-      var w = parent.offsetWidth || 400;
-      var h = cv.getAttribute('height') || 220;
-      cv.style.width  = w + 'px';
-      cv.style.height = h + 'px';
-      cv.width  = w;
-      cv.height = parseInt(h);
-    }
+  // Store restore data globally so onafterprint can use it
+  window._printRestoreData = {
+    hiddenModules: hiddenModules,
+    hiddenPanels: hiddenPanels,
+    hiddenContents: hiddenContents,
+    hiddenEmpties: hiddenEmpties,
+    addedHeaders: addedHeaders,
+    checks: checks,
+    body: body
+  };
+
+  // 4b. After two animation frames (ensuring the browser has reflowed the newly-visible panels),
+  //     set explicit pixel dimensions on all canvases and redraw every chart.
+  //     We use a double-rAF pattern: first rAF starts the reflow, second rAF fires after paint.
+  requestAnimationFrame(function() {
+    requestAnimationFrame(function() {
+
+      // Force all canvas elements to have explicit pixel dimensions
+      document.querySelectorAll('canvas').forEach(function(cv) {
+        var parent = cv.parentElement;
+        if (parent) {
+          var w = parent.getBoundingClientRect().width || parent.offsetWidth || 400;
+          var h = parseInt(cv.getAttribute('height')) || 220;
+          cv.style.width  = w + 'px';
+          cv.style.height = h + 'px';
+          cv.width  = Math.round(w);
+          cv.height = h;
+        }
+      });
+
+      // Redraw all charts now that containers are visible and canvas sizes are correct
+      if(grrData){ redrawGRRCharts(); }
+      if(biasData){ redrawBiasCharts(); }
+      if(stabData){ redrawStabCharts(); }
+      if(attrData){ redrawAttrCharts(); }
+
+      // Resize all charts, then wait 1200ms for full render before printing
+      setTimeout(function() {
+        Object.values(charts).forEach(function(c) { try { c.resize(); } catch(e) {} });
+
+        // Wait 1200ms so Chart.js fully paints all charts before browser snapshots the page
+        setTimeout(function() {
+          window.print();
+        }, 1200);
+      }, 150);
+
+    });
   });
-
-  // 4c. Redraw all charts now that containers are visible and canvas sizes are correct
-  if(grrData){ redrawGRRCharts(); }
-  if(biasData){ redrawBiasCharts(); }
-  if(stabData){ redrawStabCharts(); }
-  if(attrData){ redrawAttrCharts(); }
-
-  // 5. Resize all charts, wait longer for full render, then print and restore
-  setTimeout(function() {
-    Object.values(charts).forEach(function(c) { try { c.resize(); } catch(e) {} });
-
-    // Store restore data globally so onafterprint can use it
-    window._printRestoreData = {
-      hiddenModules: hiddenModules,
-      hiddenPanels: hiddenPanels,
-      hiddenContents: hiddenContents,
-      hiddenEmpties: hiddenEmpties,
-      addedHeaders: addedHeaders,
-      checks: checks,
-      body: body
-    };
-
-    // Wait 800ms (up from 300ms) so Chart.js fully paints all charts before browser snapshots the page
-    setTimeout(function() {
-      window.print();
-    }, 800);
-  }, 100);
 }
 
 // ── PRINT EVENT HANDLERS (mirrors SPC pattern) ──
@@ -2021,11 +2111,13 @@ window.onafterprint = function() {
   // Restore module panels
   (rd.hiddenModules || []).forEach(function(p) {
     if (p.el) {
-      // Was active before, had active removed → restore active
-      if (p.wasActive) p.el.classList.add('active');
-    } else {
-      // Was inactive, had active added → remove active
-      p.classList.remove('active');
+      if (p.wasActive) {
+        // Was active before, had active removed → restore active
+        p.el.classList.add('active');
+      } else {
+        // Was inactive, had active added for print → remove active
+        p.el.classList.remove('active');
+      }
     }
   });
   // Restore sub-panels
