@@ -574,16 +574,34 @@ canvas{max-width:100%}
 
   /* ── Checkbox-driven print exclusions ── */
   body.no-print-header   #print-header                                         { display:none!important }
-  body.no-print-kpi      .kpi-grid, body.no-print-kpi .kpi                     { display:none!important }
-  body.no-print-tables   .tbl-wrap, body.no-print-tables table.t               { display:none!important }
-  body.no-print-charts   .chart-wrap, body.no-print-charts .chart-wrap-full,
-  body.no-print-charts   canvas                                                 { display:none!important }
-  body.no-print-verdict  [id$="-verdict"]                                       { display:none!important }
-  body.no-print-modules  #grr-anova, body.no-print-modules #grr-avgr,
-  body.no-print-modules  #grr-charts, body.no-print-modules #grr-variance,
-  body.no-print-modules  #bias-bias, body.no-print-modules #bias-linearity,
-  body.no-print-modules  #stability-results,
-  body.no-print-modules  #attribute-results                                     { display:none!important }
+
+  body.no-print-kpi      .kpi-grid,
+  body.no-print-kpi      .kpi                                                  { display:none!important }
+
+  body.no-print-tables   .tbl-wrap,
+  body.no-print-tables   .sec-div,
+  body.no-print-tables   table.t                                               { display:none!important }
+
+  body.no-print-charts   .chart-wrap,
+  body.no-print-charts   .chart-wrap-full,
+  body.no-print-charts   .chart-grid-2,
+  body.no-print-charts   .chart-grid-3,
+  body.no-print-charts   canvas,
+  body.no-print-charts   img[src^="data:image/png"]                           { display:none!important }
+
+  body.no-print-verdict  #anova-verdict,
+  body.no-print-verdict  #avgr-verdict,
+  body.no-print-verdict  #bias-verdict,
+  body.no-print-verdict  #linearity-verdict,
+  body.no-print-verdict  #stab-verdict,
+  body.no-print-verdict  #attr-verdict,
+  body.no-print-verdict  [id$="-verdict"]                                      { display:none!important }
+
+  body.no-print-modules  #mod-grr,
+  body.no-print-modules  #mod-bias,
+  body.no-print-modules  #mod-stability,
+  body.no-print-modules  #mod-attribute,
+  body.no-print-modules  .print-module-header                                  { display:none!important }
 }
 .print-header{display:none;margin-bottom:16px;border-bottom:2px solid #ccc;padding-bottom:12px}
 .print-module-header{display:none}
@@ -2003,16 +2021,18 @@ function executePrint(){
     'pc-verdict': 'no-print-verdict',
   };
   const body = document.body;
+  // Remove all print classes first (clean slate)
+  Object.values(checks).forEach(function(cls) { body.classList.remove(cls); });
+  body.classList.remove('no-print-modules');
+  // Apply based on checkbox state
   Object.entries(checks).forEach(function(entry) {
     var cbId = entry[0], cls = entry[1];
     var cb = document.getElementById(cbId);
     if (cb && !cb.checked) { body.classList.add(cls); }
-    else { body.classList.remove(cls); }
   });
-  // pc-all-modules: when CHECKED = include all modules (remove hide class)
+  // pc-all-modules: when UNCHECKED = hide all other modules (only show active)
   var cbModules = document.getElementById('pc-all-modules');
   if (cbModules && !cbModules.checked) { body.classList.add('no-print-modules'); }
-  else { body.classList.remove('no-print-modules'); }
 
   // 3. Determine which modules have data and should be printed
   var printAllModules = (document.getElementById('pc-all-modules') || {checked: true}).checked;
@@ -2123,7 +2143,6 @@ function executePrint(){
     hiddenContents: hiddenContents,
     hiddenEmpties: hiddenEmpties,
     addedHeaders: addedHeaders,
-    checks: checks,
     body: body
   };
 
@@ -2235,8 +2254,8 @@ window.onafterprint = function() {
   // Restore empty div display
   (rd.hiddenEmpties || []).forEach(function(item) { item.el.style.display = item.prev; });
   // Remove body print classes
-  Object.values(rd.checks || {}).forEach(function(cls) { rd.body.classList.remove(cls); });
-  rd.body.classList.remove('no-print-modules');
+  ['no-print-header','no-print-kpi','no-print-tables','no-print-charts','no-print-verdict','no-print-modules']
+    .forEach(function(cls) { rd.body.classList.remove(cls); });
   window._printRestoreData = null;
   // Re-enable animations and redraw active charts at correct size
   Chart.defaults.animation = { duration: 400 };
