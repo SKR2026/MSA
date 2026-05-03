@@ -2156,8 +2156,31 @@ function executePrint(){
       setTimeout(function() {
         Object.values(charts).forEach(function(c) { try { c.resize(); } catch(e) {} });
 
-        // Wait 1200ms so Chart.js fully paints all charts before browser snapshots the page
+        // Wait 1200ms so Chart.js fully paints all charts before snapshotting
         setTimeout(function() {
+
+          // ── Canvas → <img> swap ───────────────────────────────────────────
+          // Snapshot every canvas as a base64 PNG and replace it with an <img>.
+          // This guarantees charts appear in ALL browsers and PDF renderers,
+          // which often blank-out live Canvas elements during window.print().
+          // onafterprint (below) restores the original canvases.
+          var canvasSwaps = [];
+          document.querySelectorAll('canvas').forEach(function(cv) {
+            try {
+              var dataUrl = cv.toDataURL('image/png');
+              var img = document.createElement('img');
+              img.src = dataUrl;
+              img.style.width   = cv.style.width   || (cv.offsetWidth  + 'px');
+              img.style.height  = cv.style.height  || (cv.offsetHeight + 'px');
+              img.style.display = 'block';
+              img.style.maxWidth = '100%';
+              canvasSwaps.push({ canvas: cv, img: img, parent: cv.parentNode, next: cv.nextSibling });
+              cv.parentNode.replaceChild(img, cv);
+            } catch(e) { /* tainted canvas — leave in place */ }
+          });
+          window._printRestoreData.canvasSwaps = canvasSwaps;
+          // ─────────────────────────────────────────────────────────────────
+
           window.print();
         }, 1200);
       }, 150);
@@ -2171,6 +2194,24 @@ function executePrint(){
 window.onafterprint = function() {
   var rd = window._printRestoreData;
   if (!rd) return;
+
+  // ── Restore canvas elements from img-swap ─────────────────────────────
+  (rd.canvasSwaps || []).forEach(function(sw) {
+    try {
+      // Replace the <img> snapshot back with the original <canvas>
+      if (sw.img && sw.img.parentNode) {
+        sw.img.parentNode.replaceChild(sw.canvas, sw.img);
+      } else if (sw.parent) {
+        // Fallback: re-insert canvas at original position
+        if (sw.next && sw.next.parentNode === sw.parent) {
+          sw.parent.insertBefore(sw.canvas, sw.next);
+        } else {
+          sw.parent.appendChild(sw.canvas);
+        }
+      }
+    } catch(e) {}
+  });
+  // ─────────────────────────────────────────────────────────────────────
 
   // Remove injected module section headers
   (rd.addedHeaders || []).forEach(function(h) { if (h.parentNode) h.parentNode.removeChild(h); });
