@@ -512,19 +512,51 @@ canvas{max-width:100%}
   .admin-overlay,.save-overlay,.notif,#admin-fab,
   #grr-data,#bias-data,#stability-data,#attribute-data { display:none!important }
 
+  /* ── CRITICAL: Reset html/body/layout so content can flow across pages ──
+     Original screen styles use overflow:hidden + fixed heights to keep
+     the app inside the viewport. Those constraints clip print content
+     after one page worth of pixels — must be reset for print. */
+  html, body {
+    overflow: visible!important;
+    height: auto!important;
+    min-height: 0!important;
+    max-height: none!important;
+  }
+
   /* ── Layout reset ── */
-  .layout { display:block!important }
-  .main   { overflow:visible!important; height:auto!important; display:block!important; }
+  .layout {
+    display:block!important;
+    height:auto!important;
+    min-height:0!important;
+    max-height:none!important;
+    overflow:visible!important;
+    grid-template-columns:none!important;
+  }
+  .main {
+    overflow:visible!important;
+    height:auto!important;
+    max-height:none!important;
+    display:block!important;
+  }
 
   /* ── Make all module panels and sub-panels visible and flow as blocks ── */
-  .module-panel { display:block!important; overflow:visible!important; height:auto!important; flex:none!important; }
-  .sub-panel    { display:block!important; overflow:visible!important; padding:8px 0!important; }
+  .module-panel {
+    display:block!important;
+    overflow:visible!important;
+    height:auto!important;
+    max-height:none!important;
+    min-height:0!important;
+    flex:none!important;
+  }
+  .sub-panel    { display:block!important; overflow:visible!important; padding:8px 0!important; height:auto!important; max-height:none!important; }
   /* Avoid splitting a sub-panel's content across pages where possible */
   .sub-panel    { page-break-inside:auto; break-inside:auto; }
   /* Section dividers stay together with the content that follows */
   .sec-div      { page-break-after:avoid!important; break-after:avoid!important; }
   /* Tables and KPI grids should not split mid-row across pages */
   .tbl-wrap, .kpi-grid { page-break-inside:avoid; break-inside:avoid; }
+  /* Cards should not be clipped */
+  .card { overflow:visible!important; height:auto!important; }
 
   /* ── Force all result content divs visible ── */
   #grr-anova-content, #grr-avgr-content, #grr-charts-content, #grr-var-content,
@@ -541,7 +573,7 @@ canvas{max-width:100%}
   body { background:white!important; color:black!important; }
   .card,.chart-wrap,.chart-wrap-full,.kpi { background:white!important; border:1px solid #ccc!important; break-inside:avoid; }
   .print-header { display:block!important }
-  @page { size:A3 landscape; margin:12mm }
+  @page { size:A4 landscape; margin:10mm }
 
   /* ── Prevent canvas/chart collapse during print ── */
   canvas { display:block!important; max-width:100%!important; }
@@ -2000,6 +2032,15 @@ function executePrint(){
   document.getElementById('ph-gauge').textContent = (document.getElementById('f-gauge').value || '\u2014') + ' #' + (document.getElementById('f-gaugeno').value || '');
   document.getElementById('ph-prepby').textContent = document.getElementById('f-prepby').value || '\u2014';
 
+  // 1b. Move print header to be the first child of body so it lands on page 1
+  var phEl = document.getElementById('print-header');
+  var phOriginalParent = null, phOriginalNext = null;
+  if (phEl) {
+    phOriginalParent = phEl.parentNode;
+    phOriginalNext   = phEl.nextSibling;
+    document.body.insertBefore(phEl, document.body.firstChild);
+  }
+
   // 2. Read checkboxes and apply body classes to control print visibility
   // For all except pc-all-modules: add class when UNCHECKED (exclude from print)
   const checks = {
@@ -2167,7 +2208,10 @@ function executePrint(){
     hiddenEmpties: hiddenEmpties,
     addedHeaders: addedHeaders,
     checks: checks,
-    body: body
+    body: body,
+    phEl: phEl,
+    phOriginalParent: phOriginalParent,
+    phOriginalNext: phOriginalNext
   };
 
   // 4b. After two animation frames (ensuring the browser has reflowed the newly-visible panels),
@@ -2268,6 +2312,18 @@ window.onafterprint = function() {
   // Remove body print classes
   Object.values(rd.checks || {}).forEach(function(cls) { rd.body.classList.remove(cls); });
   rd.body.classList.remove('no-print-modules');
+
+  // Restore print-header to its original DOM location
+  if (rd.phEl && rd.phOriginalParent) {
+    try {
+      if (rd.phOriginalNext && rd.phOriginalNext.parentNode === rd.phOriginalParent) {
+        rd.phOriginalParent.insertBefore(rd.phEl, rd.phOriginalNext);
+      } else {
+        rd.phOriginalParent.appendChild(rd.phEl);
+      }
+    } catch(e) {}
+  }
+
   window._printRestoreData = null;
   // Re-enable animations and redraw active charts at correct size
   Chart.defaults.animation = { duration: 400 };
