@@ -500,10 +500,11 @@ canvas{max-width:100%}
 .save-icon{width:38px;height:38px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
 .save-opt-info h4{font-size:13px;font-weight:600;margin-bottom:2px}
 .save-opt-info p{font-size:11px;color:var(--text3)}
-.print-preview-section{background:var(--surf2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px}
-.print-check-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.print-check{display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer}
-.print-check input[type=checkbox]{width:14px;height:14px;accent-color:var(--a1)}
+.print-preview-section{background:var(--surf2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px;position:relative;z-index:5}
+.print-check-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.print-check{display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;padding:6px 8px;border-radius:6px;transition:background .12s;user-select:none;-webkit-user-select:none;pointer-events:auto;position:relative;z-index:6}
+.print-check:hover{background:rgba(79,156,249,.08)}
+.print-check input[type=checkbox]{width:16px;height:16px;accent-color:var(--a1);cursor:pointer;flex-shrink:0;pointer-events:auto;margin:0}
 
 @media print {
   /* ── Hide all UI chrome ── */
@@ -517,7 +518,13 @@ canvas{max-width:100%}
 
   /* ── Make all module panels and sub-panels visible and flow as blocks ── */
   .module-panel { display:block!important; overflow:visible!important; height:auto!important; flex:none!important; }
-  .sub-panel    { display:block!important; overflow:visible!important; }
+  .sub-panel    { display:block!important; overflow:visible!important; padding:8px 0!important; }
+  /* Avoid splitting a sub-panel's content across pages where possible */
+  .sub-panel    { page-break-inside:auto; break-inside:auto; }
+  /* Section dividers stay together with the content that follows */
+  .sec-div      { page-break-after:avoid!important; break-after:avoid!important; }
+  /* Tables and KPI grids should not split mid-row across pages */
+  .tbl-wrap, .kpi-grid { page-break-inside:avoid; break-inside:avoid; }
 
   /* ── Force all result content divs visible ── */
   #grr-anova-content, #grr-avgr-content, #grr-charts-content, #grr-var-content,
@@ -560,51 +567,30 @@ canvas{max-width:100%}
     padding: 8px 14px!important;
     margin: 18px 0 10px!important;
     border-radius: 6px!important;
-    page-break-before: auto!important;
-    break-before: auto!important;
+    page-break-after: avoid!important;
+    break-after: avoid!important;
     -webkit-print-color-adjust: exact!important;
     print-color-adjust: exact!important;
   }
-  /* Put each module on its own page (except the first) */
-  .module-panel + .print-module-header,
-  .print-module-header ~ .module-panel {
+  /* Page break BEFORE each module header except the very first one.
+     We use ~ which selects every header that follows another header,
+     i.e. every header except the first of its kind in the document. */
+  .print-module-header ~ .print-module-header {
     page-break-before: always!important;
     break-before: page!important;
   }
 
   /* ── Checkbox-driven print exclusions ── */
-  body.no-print-header #print-header { display:none!important }
-
-  body.no-print-kpi .kpi-grid { display:none!important }
-  body.no-print-kpi .kpi-grid-4 { display:none!important }
-  body.no-print-kpi .kpi { display:none!important }
-  body.no-print-kpi #anova-kpi { display:none!important }
-  body.no-print-kpi #avgr-kpi { display:none!important }
-  body.no-print-kpi #var-kpi { display:none!important }
-  body.no-print-kpi #bias-kpi { display:none!important }
-  body.no-print-kpi #linearity-kpi { display:none!important }
-  body.no-print-kpi #stab-kpi { display:none!important }
-  body.no-print-kpi #attr-kpi { display:none!important }
-
-  body.no-print-tables .tbl-wrap { display:none!important }
-  body.no-print-tables table.t { display:none!important }
-
-  body.no-print-charts .chart-wrap { display:none!important }
-  body.no-print-charts .chart-wrap-full { display:none!important }
-  body.no-print-charts canvas { display:none!important }
-  body.no-print-charts .chart-grid-2 { display:none!important }
-  body.no-print-charts .chart-grid-3 { display:none!important }
-
-  body.no-print-verdict [id$="-verdict"] { display:none!important }
-
-  body.no-print-modules #grr-anova { display:none!important }
-  body.no-print-modules #grr-avgr { display:none!important }
-  body.no-print-modules #grr-charts { display:none!important }
-  body.no-print-modules #grr-variance { display:none!important }
-  body.no-print-modules #bias-bias { display:none!important }
-  body.no-print-modules #bias-linearity { display:none!important }
-  body.no-print-modules #stability-results { display:none!important }
-  body.no-print-modules #attribute-results { display:none!important }
+  body.no-print-header   #print-header                                         { display:none!important }
+  body.no-print-kpi      .kpi-grid, body.no-print-kpi .kpi                     { display:none!important }
+  body.no-print-tables   .tbl-wrap, body.no-print-tables table.t               { display:none!important }
+  body.no-print-charts   .chart-wrap, body.no-print-charts .chart-wrap-full,
+  body.no-print-charts   canvas                                                 { display:none!important }
+  body.no-print-verdict  [id$="-verdict"]                                       { display:none!important }
+  /* When "All Analysis Modules" is unchecked, JS forces inactive modules to display:none inline.
+     We keep this CSS rule as a safety net but it intentionally targets only entire module panels
+     (NOT their sub-panels) so the active module still prints completely. */
+  body.no-print-modules  .module-panel:not(.active)                            { display:none!important }
 }
 .print-header{display:none;margin-bottom:16px;border-bottom:2px solid #ccc;padding-bottom:12px}
 .print-module-header{display:none}
@@ -1033,8 +1019,8 @@ canvas{max-width:100%}
       <div class="save-opt" id="opt-csv" onclick="selectSaveOpt('csv')">
         <div class="save-icon" style="background:rgba(52,211,153,.15)">📊</div>
         <div class="save-opt-info">
-          <h4>Export Full Report as CSV</h4>
-          <p>Export all modules' raw data + analysis result tables in one CSV file</p>
+          <h4>Export Data as CSV</h4>
+          <p>Export the current measurement data for use in other tools</p>
         </div>
       </div>
       <div class="save-opt" id="opt-charts" onclick="selectSaveOpt('charts')">
@@ -1052,16 +1038,16 @@ canvas{max-width:100%}
         </div>
       </div>
 
-      <div id="print-options-panel" style="display:none;margin-top:8px">
+      <div id="print-options-panel" style="display:none;margin-top:8px" onclick="event.stopPropagation()">
         <div class="print-preview-section">
           <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">Include in Print</div>
           <div class="print-check-grid">
-            <label class="print-check"><input type="checkbox" id="pc-header" checked> Study Header</label>
-            <label class="print-check"><input type="checkbox" id="pc-kpi" checked> KPI Summary</label>
-            <label class="print-check"><input type="checkbox" id="pc-tables" checked> Data Tables</label>
-            <label class="print-check"><input type="checkbox" id="pc-charts" checked> Charts</label>
-            <label class="print-check"><input type="checkbox" id="pc-verdict" checked> Verdict / Decision</label>
-            <label class="print-check"><input type="checkbox" id="pc-all-modules" checked> All Analysis Modules</label>
+            <label class="print-check" onclick="event.stopPropagation()"><input type="checkbox" id="pc-header" checked onclick="event.stopPropagation()"> Study Header</label>
+            <label class="print-check" onclick="event.stopPropagation()"><input type="checkbox" id="pc-kpi" checked onclick="event.stopPropagation()"> KPI Summary</label>
+            <label class="print-check" onclick="event.stopPropagation()"><input type="checkbox" id="pc-tables" checked onclick="event.stopPropagation()"> Data Tables</label>
+            <label class="print-check" onclick="event.stopPropagation()"><input type="checkbox" id="pc-charts" checked onclick="event.stopPropagation()"> Charts</label>
+            <label class="print-check" onclick="event.stopPropagation()"><input type="checkbox" id="pc-verdict" checked onclick="event.stopPropagation()"> Verdict / Decision</label>
+            <label class="print-check" onclick="event.stopPropagation()"><input type="checkbox" id="pc-all-modules" checked onclick="event.stopPropagation()"> All Analysis Modules</label>
           </div>
         </div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:12px">Tip: In the print dialog, choose <em>Save as PDF</em> to create a digital copy.</div>
@@ -1854,19 +1840,7 @@ function executeSave(){
   if(selectedSaveOpt==='json'){ saveStudyJSON(); closeSaveModal(); }
   else if(selectedSaveOpt==='csv'){ exportCSV(); closeSaveModal(); }
   else if(selectedSaveOpt==='charts'){ exportChartsAsPNG(); closeSaveModal(); }
-  else if(selectedSaveOpt==='print'){
-    // Snapshot checkbox states BEFORE closing the modal (elements still in DOM)
-    var printChecks = {
-      header:     (document.getElementById('pc-header')     ||{checked:true}).checked,
-      kpi:        (document.getElementById('pc-kpi')        ||{checked:true}).checked,
-      tables:     (document.getElementById('pc-tables')     ||{checked:true}).checked,
-      charts:     (document.getElementById('pc-charts')     ||{checked:true}).checked,
-      verdict:    (document.getElementById('pc-verdict')    ||{checked:true}).checked,
-      allModules: (document.getElementById('pc-all-modules')||{checked:true}).checked,
-    };
-    closeSaveModal();
-    setTimeout(function(){ executePrint(printChecks); }, 80);
-  }
+  else if(selectedSaveOpt==='print'){ closeSaveModal(); setTimeout(executePrint, 80); }
 }
 
 function exportChartsAsPNG(){
@@ -1986,120 +1960,28 @@ function saveStudyJSON(){
 }
 
 function exportCSV(){
-  var sections = [];
-  var meta = [
-    'MSA Suite — Data Export',
-    'Study No: ' + (document.getElementById('f-studyno').value || '—'),
-    'Company: '  + (document.getElementById('f-company').value  || '—'),
-    'Date: '     + (document.getElementById('f-date').value     || '—'),
-    'Part: '     + (document.getElementById('f-partname').value || '—') + ' (' + (document.getElementById('f-partno').value || '') + ')',
-    'Gauge: '    + (document.getElementById('f-gauge').value    || '—'),
-    'Prepared By: ' + (document.getElementById('f-prepby').value || '—'),
-    'Exported: ' + new Date().toLocaleString(),
-    ''
-  ];
-  sections.push(meta.join('\n'));
-
-  // ── Gauge R&R raw data ──
-  var grrRaw = (document.getElementById('grr-input')?.value || '').trim();
-  if (grrRaw) {
-    sections.push('=== GAUGE R&R RAW DATA ===\nOperator\tPart\tMeasurements...\n' + grrRaw + '\n');
+  const activeTab = document.querySelector('.module-tab.active').textContent;
+  let csvContent = '', fname = 'msa_data.csv';
+  if(activeTab.includes('R&R')){
+    csvContent = document.getElementById('grr-input')?.value || '';
+    fname = 'grr_data.csv';
+  } else if(activeTab.includes('Bias')){
+    csvContent = document.getElementById('bias-input')?.value || '';
+    fname = 'bias_data.csv';
+  } else if(activeTab.includes('Stability')){
+    csvContent = document.getElementById('stab-input')?.value || '';
+    fname = 'stability_data.csv';
+  } else {
+    csvContent = document.getElementById('attr-input')?.value || '';
+    fname = 'attribute_data.csv';
   }
-  // ── Gauge R&R ANOVA table ──
-  var anovaEl = document.getElementById('anova-table');
-  if (anovaEl && anovaEl.rows.length > 0) {
-    var rows = [];
-    Array.from(anovaEl.rows).forEach(function(r){ rows.push(Array.from(r.cells).map(function(c){ return c.textContent.trim().replace(/,/g,' '); }).join(',')); });
-    sections.push('=== GAUGE R&R — ANOVA TABLE ===\n' + rows.join('\n') + '\n');
-  }
-  // ── Gauge R&R Avg & Range table ──
-  var avgrEl = document.getElementById('avgr-table');
-  if (avgrEl && avgrEl.rows.length > 0) {
-    var rows = [];
-    Array.from(avgrEl.rows).forEach(function(r){ rows.push(Array.from(r.cells).map(function(c){ return c.textContent.trim().replace(/,/g,' '); }).join(',')); });
-    sections.push('=== GAUGE R&R — AVG & RANGE TABLE ===\n' + rows.join('\n') + '\n');
-  }
-  // ── Gauge R&R Variance Components table ──
-  var vcEl = document.getElementById('vc-table');
-  if (vcEl && vcEl.rows.length > 0) {
-    var rows = [];
-    Array.from(vcEl.rows).forEach(function(r){ rows.push(Array.from(r.cells).map(function(c){ return c.textContent.trim().replace(/,/g,' '); }).join(',')); });
-    sections.push('=== GAUGE R&R — VARIANCE COMPONENTS ===\n' + rows.join('\n') + '\n');
-  }
-  // GRR KPIs
-  if (grrData) {
-    var k = grrData.KPIs;
-    sections.push('=== GAUGE R&R — KEY RESULTS ===\n' +
-      'Metric,Value\n' +
-      '%GRR,' + k.pctGRR.toFixed(4) + '\n' +
-      '%EV (Repeatability),' + k.pctEV.toFixed(4) + '\n' +
-      '%AV (Reproducibility),' + k.pctAV.toFixed(4) + '\n' +
-      '%PV (Part Variation),' + k.pctPV.toFixed(4) + '\n' +
-      'ndc,' + k.ndc + '\n' +
-      (k.PTratio != null ? '%P/T Ratio,' + k.PTratio.toFixed(4) + '\n' : '') +
-      '\n');
-  }
-
-  // ── Bias & Linearity raw data ──
-  var biasRaw = (document.getElementById('bias-input')?.value || '').trim();
-  if (biasRaw) {
-    sections.push('=== BIAS & LINEARITY RAW DATA ===\nReference\tMeasurements...\n' + biasRaw + '\n');
-  }
-  var biasTableEl = document.getElementById('bias-table');
-  if (biasTableEl && biasTableEl.rows.length > 0) {
-    var rows = [];
-    Array.from(biasTableEl.rows).forEach(function(r){ rows.push(Array.from(r.cells).map(function(c){ return c.textContent.trim().replace(/,/g,' '); }).join(',')); });
-    sections.push('=== BIAS ANALYSIS TABLE ===\n' + rows.join('\n') + '\n');
-  }
-  var linTableEl = document.getElementById('linearity-table');
-  if (linTableEl && linTableEl.rows.length > 0) {
-    var rows = [];
-    Array.from(linTableEl.rows).forEach(function(r){ rows.push(Array.from(r.cells).map(function(c){ return c.textContent.trim().replace(/,/g,' '); }).join(',')); });
-    sections.push('=== LINEARITY TABLE ===\n' + rows.join('\n') + '\n');
-  }
-
-  // ── Stability raw data ──
-  var stabRaw = (document.getElementById('stab-input')?.value || '').trim();
-  if (stabRaw) {
-    sections.push('=== STABILITY RAW DATA ===\nMeasurements per period (tab-separated)\n' + stabRaw + '\n');
-  }
-  var stabTableEl = document.getElementById('stab-table');
-  if (stabTableEl && stabTableEl.rows.length > 0) {
-    var rows = [];
-    Array.from(stabTableEl.rows).forEach(function(r){ rows.push(Array.from(r.cells).map(function(c){ return c.textContent.trim().replace(/,/g,' '); }).join(',')); });
-    sections.push('=== STABILITY ANALYSIS TABLE ===\n' + rows.join('\n') + '\n');
-  }
-
-  // ── Attribute MSA raw data ──
-  var attrRaw = (document.getElementById('attr-input')?.value || '').trim();
-  if (attrRaw) {
-    sections.push('=== ATTRIBUTE MSA RAW DATA ===\nPart\tReference\tOperator_Readings...\n' + attrRaw + '\n');
-  }
-  var attrKappaEl = document.getElementById('attr-kappa-table');
-  if (attrKappaEl && attrKappaEl.rows.length > 0) {
-    var rows = [];
-    Array.from(attrKappaEl.rows).forEach(function(r){ rows.push(Array.from(r.cells).map(function(c){ return c.textContent.trim().replace(/,/g,' '); }).join(',')); });
-    sections.push('=== ATTRIBUTE MSA — KAPPA TABLE ===\n' + rows.join('\n') + '\n');
-  }
-  var attrAgreeEl = document.getElementById('attr-agree-table');
-  if (attrAgreeEl && attrAgreeEl.rows.length > 0) {
-    var rows = [];
-    Array.from(attrAgreeEl.rows).forEach(function(r){ rows.push(Array.from(r.cells).map(function(c){ return c.textContent.trim().replace(/,/g,' '); }).join(',')); });
-    sections.push('=== ATTRIBUTE MSA — AGREEMENT TABLE ===\n' + rows.join('\n') + '\n');
-  }
-
-  var csvContent = sections.join('\n');
-  if (sections.length <= 1) { notify('No data or results to export. Run an analysis first.','err'); return; }
-
-  var studyNo = (document.getElementById('f-studyno').value || 'MSA').replace(/[^a-z0-9_\-]/gi,'_');
-  var dateStr = (document.getElementById('f-date').value || new Date().toISOString().split('T')[0]);
-  var fname = studyNo + '_' + dateStr + '_FullReport.csv';
-  var blob = new Blob([csvContent], {type:'text/csv;charset=utf-8;'});
-  var a = document.createElement('a');
+  if(!csvContent.trim()){ notify('No data to export in current module.','err'); return; }
+  const blob = new Blob([csvContent], {type:'text/csv'});
+  const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = fname;
   a.click();
-  notify('Full CSV report exported: ' + fname, 'ok');
+  notify('CSV exported: ' + fname, 'ok');
 }
 
 function openPrintDialog(){
@@ -2107,17 +1989,7 @@ function openPrintDialog(){
   selectSaveOpt('print');
 }
 
-function executePrint(printChecks){
-  // Use passed-in checkbox snapshot if available; otherwise read from DOM as fallback
-  var checks_snapshot = printChecks || {
-    header:     (document.getElementById('pc-header')     ||{checked:true}).checked,
-    kpi:        (document.getElementById('pc-kpi')        ||{checked:true}).checked,
-    tables:     (document.getElementById('pc-tables')     ||{checked:true}).checked,
-    charts:     (document.getElementById('pc-charts')     ||{checked:true}).checked,
-    verdict:    (document.getElementById('pc-verdict')    ||{checked:true}).checked,
-    allModules: (document.getElementById('pc-all-modules')||{checked:true}).checked,
-  };
-
+function executePrint(){
   // 1. Populate print header
   document.getElementById('ph-company').textContent = document.getElementById('f-company').value || '\u2014';
   document.getElementById('ph-customer').textContent = document.getElementById('f-customer').value || '\u2014';
@@ -2138,19 +2010,19 @@ function executePrint(printChecks){
     'pc-verdict': 'no-print-verdict',
   };
   const body = document.body;
-  // Apply classes based on snapshot (not live DOM — modal is already closed)
-  if (!checks_snapshot.header)  body.classList.add('no-print-header');  else body.classList.remove('no-print-header');
-  if (!checks_snapshot.kpi)     body.classList.add('no-print-kpi');     else body.classList.remove('no-print-kpi');
-  if (!checks_snapshot.tables)  body.classList.add('no-print-tables');  else body.classList.remove('no-print-tables');
-  if (!checks_snapshot.charts)  body.classList.add('no-print-charts');  else body.classList.remove('no-print-charts');
-  if (!checks_snapshot.verdict) body.classList.add('no-print-verdict'); else body.classList.remove('no-print-verdict');
-
-  // pc-all-modules: when CHECKED = include all modules
-  if (!checks_snapshot.allModules) body.classList.add('no-print-modules'); else body.classList.remove('no-print-modules');
+  Object.entries(checks).forEach(function(entry) {
+    var cbId = entry[0], cls = entry[1];
+    var cb = document.getElementById(cbId);
+    if (cb && !cb.checked) { body.classList.add(cls); }
+    else { body.classList.remove(cls); }
+  });
+  // pc-all-modules: when CHECKED = include all modules (remove hide class)
+  var cbModules = document.getElementById('pc-all-modules');
+  var printAllModules = cbModules ? cbModules.checked : true;
+  if (cbModules && !cbModules.checked) { body.classList.add('no-print-modules'); }
+  else { body.classList.remove('no-print-modules'); }
 
   // 3. Determine which modules have data and should be printed
-  var printAllModules = checks_snapshot.allModules;
-
   // Map of module panel id → whether it has computed data
   var moduleHasData = {
     'mod-grr':       !!grrData,
@@ -2188,11 +2060,28 @@ function executePrint(printChecks){
                        subpanels: ['attribute-results'] }
   };
 
+  // Determine which modules to include in print
+  var modulesToPrint = [];
+  ['mod-grr','mod-bias','mod-stability','mod-attribute'].forEach(function(modId) {
+    var modEl = document.getElementById(modId);
+    if (!modEl) return;
+    var shouldPrint = printAllModules
+      ? moduleHasData[modId]
+      : (modEl.classList.contains('active') && moduleHasData[modId]);
+    if (shouldPrint) modulesToPrint.push(modId);
+  });
+
+  // If nothing has data, warn the user and abort
+  if (modulesToPrint.length === 0) {
+    notify('No analysis data available to print. Run an analysis first.', 'err');
+    return;
+  }
+
   // For each module: show or hide depending on data + checkbox
   ['mod-grr','mod-bias','mod-stability','mod-attribute'].forEach(function(modId) {
     var modEl = document.getElementById(modId);
     if (!modEl) return;
-    var shouldPrint = printAllModules ? moduleHasData[modId] : (modEl.classList.contains('active') && moduleHasData[modId]);
+    var shouldPrint = modulesToPrint.indexOf(modId) >= 0;
 
     if (shouldPrint) {
       // Make the module panel visible
@@ -2211,12 +2100,19 @@ function executePrint(printChecks){
       // Show all result sub-panels for this module, hide data-input sub-panels
       var map = moduleContentMap[modId];
 
-      // Force result sub-panels visible
+      // Force result sub-panels visible (for both screen-class + inline display)
       map.subpanels.forEach(function(spId) {
         var sp = document.getElementById(spId);
-        if (sp && !sp.classList.contains('active')) {
-          hiddenPanels.push(sp);
-          sp.classList.add('active');
+        if (sp) {
+          if (!sp.classList.contains('active')) {
+            hiddenPanels.push(sp);
+            sp.classList.add('active');
+          }
+          // Belt-and-suspenders: also force inline display so screen view shows them too
+          if (sp.style.display !== 'block') {
+            hiddenContents.push({ el: sp, prev: sp.style.display });
+            sp.style.display = 'block';
+          }
         }
       });
 
@@ -2238,12 +2134,25 @@ function executePrint(printChecks){
         }
       });
 
+      // ALSO hide the data-input sub-panel for this module (it has class active by default)
+      var dataPanelId = modId.replace('mod-','') + '-data';
+      // For attribute, the id is 'attribute-data'; for stability 'stability-data'; etc.
+      // The replace above gives 'grr-data', 'bias-data', 'stability-data', 'attribute-data' — correct
+      var dataPanel = document.getElementById(dataPanelId);
+      if (dataPanel && dataPanel.classList.contains('active')) {
+        hiddenPanels.push(dataPanel);
+        dataPanel.classList.remove('active');
+      }
+
     } else {
       // Hide this module entirely — no data or not selected
       if (modEl.classList.contains('active')) {
         hiddenModules.push({ el: modEl, wasActive: true });
         modEl.classList.remove('active');
       }
+      // Also force display:none inline so @media print can't override
+      hiddenContents.push({ el: modEl, prev: modEl.style.display });
+      modEl.style.display = 'none';
     }
   });
 
@@ -2257,6 +2166,7 @@ function executePrint(printChecks){
     hiddenContents: hiddenContents,
     hiddenEmpties: hiddenEmpties,
     addedHeaders: addedHeaders,
+    checks: checks,
     body: body
   };
 
@@ -2272,6 +2182,8 @@ function executePrint(printChecks){
         if (parent) {
           var w = parent.getBoundingClientRect().width || parent.offsetWidth || 400;
           var h = parseInt(cv.getAttribute('height')) || 220;
+          // Skip canvases inside hidden modules
+          if (w < 50) return;
           cv.style.width  = w + 'px';
           cv.style.height = h + 'px';
           cv.width  = Math.round(w);
@@ -2279,11 +2191,25 @@ function executePrint(printChecks){
         }
       });
 
-      // Redraw all charts now that containers are visible and canvas sizes are correct
-      if(grrData){ redrawGRRCharts(); }
-      if(biasData){ redrawBiasCharts(); }
-      if(stabData){ redrawStabCharts(); }
-      if(attrData){ redrawAttrCharts(); }
+      // FULL re-render of every module that will print:
+      // - GRR: redraw line/scatter charts AND variance bar+pie charts
+      // - Bias / Stability / Attribute: redraw their charts
+      // (Tables and KPIs persist as innerHTML once set by run* functions.)
+      try {
+        if (modulesToPrint.indexOf('mod-grr') >= 0 && grrData) {
+          redrawGRRCharts();
+          renderVC(grrData);   // ← critical fix: redraws variance bar + pie charts
+        }
+        if (modulesToPrint.indexOf('mod-bias') >= 0 && biasData) {
+          redrawBiasCharts();
+        }
+        if (modulesToPrint.indexOf('mod-stability') >= 0 && stabData) {
+          redrawStabCharts();
+        }
+        if (modulesToPrint.indexOf('mod-attribute') >= 0 && attrData) {
+          redrawAttrCharts();
+        }
+      } catch(e) { console.warn('Chart redraw before print:', e); }
 
       // Resize all charts, then wait 1200ms for full render before printing
       setTimeout(function() {
@@ -2293,7 +2219,7 @@ function executePrint(printChecks){
         setTimeout(function() {
           window.print();
         }, 1200);
-      }, 150);
+      }, 200);
 
     });
   });
@@ -2320,22 +2246,40 @@ window.onafterprint = function() {
       }
     }
   });
-  // Restore sub-panels
-  (rd.hiddenPanels || []).forEach(function(p) { p.classList.remove('active'); });
-  // Restore content div display
-  (rd.hiddenContents || []).forEach(function(item) { item.el.style.display = item.prev; });
+  // Restore sub-panels: items pushed as plain elements get their .active removed.
+  (rd.hiddenPanels || []).forEach(function(p) {
+    if (p && p.classList) {
+      // If this was the data-input sub-panel that was active before print, restore it
+      if (p.id && p.id.endsWith('-data')) {
+        p.classList.add('active');
+      } else {
+        p.classList.remove('active');
+      }
+    }
+  });
+  // Restore content/sub-panel inline display
+  (rd.hiddenContents || []).forEach(function(item) {
+    if (item && item.el) item.el.style.display = item.prev || '';
+  });
   // Restore empty div display
-  (rd.hiddenEmpties || []).forEach(function(item) { item.el.style.display = item.prev; });
+  (rd.hiddenEmpties || []).forEach(function(item) {
+    if (item && item.el) item.el.style.display = item.prev || '';
+  });
   // Remove body print classes
-  ['no-print-header','no-print-kpi','no-print-tables','no-print-charts','no-print-verdict'].forEach(function(cls){ rd.body.classList.remove(cls); });
+  Object.values(rd.checks || {}).forEach(function(cls) { rd.body.classList.remove(cls); });
   rd.body.classList.remove('no-print-modules');
   window._printRestoreData = null;
   // Re-enable animations and redraw active charts at correct size
   Chart.defaults.animation = { duration: 400 };
-  if(grrData){ redrawGRRCharts(); }
-  if(biasData){ redrawBiasCharts(); }
-  if(stabData){ redrawStabCharts(); }
-  if(attrData){ redrawAttrCharts(); }
+  // Defer chart redraws so DOM has settled after restore
+  setTimeout(function() {
+    try {
+      if(grrData){ redrawGRRCharts(); renderVC(grrData); }
+      if(biasData){ redrawBiasCharts(); }
+      if(stabData){ redrawStabCharts(); }
+      if(attrData){ redrawAttrCharts(); }
+    } catch(e) {}
+  }, 100);
 };
 
 // ═══════════════════════════════════════════════════════
